@@ -1,0 +1,53 @@
+---
+title: "reaction_diffusion_model"
+author: "AZ"
+date: "6/15/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+Studies of ecological movement and dynamic spatio-temporal processes often implement reaction-diffusion models that mechanistically underlie the process in question. Among several examples, three (at least) types of diffusion have been implemented  that differ in how the diffusion process is modeled (i.e., where the coefficient is placed in the operator):  
+
+1. Plain (spatially-constant):
+$$ \delta\frac{\partial^2 u}{\partial x^2}$$
+2. Fickian:
+$$ \frac{\partial }{\partial x}(\delta\frac{\partial u}{\partial x})$$
+3. Ecological:
+$$ (\frac{\partial^2 }{\partial x^2})\delta u$$
+
+where u is the function value, x is a spatial variable, and $\delta$ is spatially-varying diffusion coefficient. 
+
+In our problem, the goal is to model the propagation process of sagebrush in post-disturbance landscapes. In two-dimensional plain the diffuiosion part of the equation can be modeled with Fickian diffuion operator, and the reaction part with logistic growth:
+
+$$ \frac{\partial u}{\partial t} = 
+\frac{\partial }{\partial x}(\frac{\partial u}{\partial x}) +
+\frac{\partial }{\partial y}(\frac{\partial u}{\partial y}) + 
+ru + (r/k)u^2$$
+
+The (linearized) discrete, centered $\bigg[\frac{\partial u}{\partial x} = \frac{u_{x+\Delta x}-u_{x-\Delta x}}{2\Delta x}\bigg]$ and $\bigg[\frac{\partial^2 u}{\partial x^2} = \frac{u_{x+\Delta x}-2u_x+u_{x-\Delta x}}{\Delta x^2}\bigg]$ version of the operator in x-dimension would be:
+$$
+\begin{aligned}
+\frac{\partial }{\partial x}(\delta\frac{\partial u}{\partial x})
+= & u_x[\frac{-2\delta_x}{\Delta x^2}] \\
+& + u_{x+\Delta x}[\frac{1}{\Delta x^2}(\delta_x+\frac{\delta_{x+\Delta x}-\delta_{x-\Delta x}}{4})] \\
+& + u_{x-\Delta x}[\frac{1}{\Delta x^2}(\delta_x+\frac{(-\delta_{x+\Delta x}+\delta_{x-\Delta x})}{4})]
+\end{aligned}
+$$
+
+Putting together the equation (note: $\Delta t =1$):
+$$
+\begin{aligned}
+u_{x,y,t+1} = & u_{x,y,t} + ru_{x,y,t} + (\frac{r}{k})u_{x,y,t}^2 \\
+& +u_{x,y,t}\bigg[\frac{-2\delta_{x,y}}{\Delta x^2}+\frac{-2\delta_{x,y}}{\Delta y^2}\bigg] \\
+& +u_{x+\Delta x,y,t}\bigg[\frac{1}{\Delta x^2}(\delta_{x,y}+\frac{\delta_{x+\Delta x,y}-\delta_{x-\Delta x,y}}{4})\bigg] \\
+& +u_{x-\Delta x,y,t}\bigg[\frac{1}{\Delta x^2}(\delta_{x,y}+\frac{(-\delta_{x+\Delta x,y}+\delta_{x-\Delta x,y})}{4})\bigg] \\
+& +u_{x,y+\Delta y,t}\bigg[\frac{1}{\Delta y^2}(\delta_{x,y}+\frac{\delta_{x,y+\Delta y}-\delta_{x,y-\Delta y}}{4})\bigg] \\
+& +u_{x,y-\Delta y,t}\bigg[\frac{1}{\Delta y^2}(\delta_{x,y}+\frac{(-\delta_{x,y+\Delta y}+\delta_{x,y-\Delta y})}{4})\bigg]
+\end{aligned}
+$$
+
+While parametrizing this model, several quations have arised:  
+1. Does the diffusion form make sense and is it approapriate for our system?  
+2. Some numerical instabilities arise and I'm currently looking for ways to re-write the model so it is more stable. Additionally, this potentially might be helpful in parameter estimation and efficiency.
+
