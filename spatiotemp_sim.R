@@ -78,25 +78,30 @@ makeGplain <- function(NN, uvec , dx, dy, dt){
 # df1 <- as.data.frame(poly, xy = TRUE, na.rm = TRUE)
 # names(df1) <- c('x', 'y', paste0('year', years[1:14]))
 
-n <- 50
-T <- 24
-matsim <- matrix(.01, n, n)
+n <- 20
+T <- 10
+matsim <- matrix(0, n, n)
 NN <- neighborhood(raster(matsim))
+bndIdx = which(apply(NN, 1, function(x) {sum(x == 0) == 1 | sum(x == 0) == 1}))
+
 ymat <- as.data.frame(matsim, xy = FALSE, na.rm = TRUE)
 
 dx <- 30
 dy <- 30
 dt <- 1
 
-r <- .2
+r <- .4
 k <- 15
-D <- rep(250, n^2)
+D <- rep(50, n^2)
 G <- makeGplain(NN, y0 , dx, dy, dt)
 
-matsim[1:3, ] <- k
-ysim <- matrix(.01, n^2, T)
+# initiate the simulation
+var <- sample(n, n/3)
+matsim[var, var] <- k
+ysim <- matrix(0.1, n^2, T)
 ysim[, 1] <- as.numeric(matsim)
 ysim <- ysim/k
+
 simsage <- function(ysim, r, k, D, dx, dy, dt, NN, spat = TRUE) {
   if(sum((ysim[, 1] > k)) > 0){
     return("error")
@@ -118,11 +123,12 @@ ysim <- simsage(ysim = ysim, r = r, k = k, D = D,
                dx = dx, dy = dy, dt = dt, NN = NN,
                spat = TRUE)
 
-matplot(t(ysim), type="l" , ylab="Cover, %", xlab="Time, years", col = viridis(n))
+matplot(t(ysim)*k, type="l" , ylab="Cover, %", xlab="Time, years", col = viridis(n))
 # --- plot raster time-series
 par(mfrow=c(3,3),mar=c(1,1,1,1))
 for(i in 1:T){
-  ymat=wrap(ysim[,i],raster(matsim))
+  ymat = wrap(ysim[, i], 
+              raster(matsim))
   plot(raster(ymat))
   #plot(poly[[i]])
 }
@@ -130,14 +136,13 @@ dev.off()
 # ---------------------------------------------------
 Dvec <- seq(0, 300, l = 9)
 D <- matrix(NA, n^2, T)
-dt = seq(1/365, 1, l = 9)
 par(mfrow = c(3, 3), mar = c(1, 1, 1, 1))
 for(i in 1:length(Dvec)){
   D[, i] = Dvec[i]
-  ysim <- simsage(ysim = ysim, r = .5, k = k, D = rep(50, n^2), 
-                  dx = dx, dy = dy, dt = dt[1], NN = NN,
+  ysim <- simsage(ysim = ysim, r = .1, k = k, D = D[, i], 
+                  dx = dx, dy = dy, dt = dt, NN = NN,
                   spat = TRUE)
-  matplot(t(ysim), type="l" , ylab="Cover, %", xlab="Time, years", col = viridis(n))
+  matplot(t(ysim[-bndIdx,]), type="l" , ylab="Cover, %", xlab="Time, years", col = viridis(n))
 }
 
 # === linearized models
@@ -153,3 +158,11 @@ curve(-.75+1.5*log(x),0,12,col="red",lwd=5,add=TRUE)
 points(1,log(mean(ysim[,1])),col="green",cex=2,pch=19)
 
 
+dlist <- list(N = n^2, T = T, N_pred = n^2, T_pred = T,
+              y_mat = t(ysim)*k, y0_tr = ysim[, 1], y0_pred = ysim[, 1],
+              y_k_prior = rep(k, n^2), y_k_pred = rep(k, n^2),
+              NN = NN)
+library(rstan)
+m <- stan(file = "rdiff_discrete_plain_statespace.stan",
+              data = dlist, chains = 2, iter = 100, warmup = 90)
+plot(m, pars = c("D"))
