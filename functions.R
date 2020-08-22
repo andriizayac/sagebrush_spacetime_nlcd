@@ -270,13 +270,35 @@ dataprep2 <- function(n = NULL, pol = NULL, rast = NULL, years = NULL, yroffset 
   return(dlist)
 }
 
+# deterministic simulation of spatial and non-spatial PDE with two (0, 1) equilibria
+simsage <- function(ysim, r, k, D, dx, dy, dt, NN, spat = TRUE) {
+    for(t in 2:ncol(ysim)){
+      print(t)
+      if(spat == TRUE){
+        G = makeGplain(NN, ysim[, t-1], dx, dy, dt)
+        ysim[, t] = ysim[, t-1] + G %*% D + r * ysim[, t-1] * (1 - ysim[, t-1])
+      } else {
+        ysim[, t] = ysim[, t-1] + r * ysim[, t-1] * (1 - ysim[, t-1])
+      }
+    }
+    return(ysim)
+}
 
-
-
-i = 2
-alist1 <- dataprep(n = i, pol = dfspat, rast = sage, year = years, yroffset = offset, seed = 123,
-                  trsubset = .1,
-                  predsubset = 1,threshold = TRUE,thresholdval = .1)
-alist2 <- dataprep2(n = i, pol = dfspat, rast = sage, year = years, yroffset = offset, seed = 123, 
-                  trsubset = .1,
-                  predsubset = 1,threshold = TRUE,thresholdval = .1)
+# stochastic simulation of the spatial and non spatial PDE with two (0, 1) equilibria
+simsage_statespace <- function(ysim, r, k, D, dx, dy, dt, NN, spat = TRUE,
+                               gamma, eta) {
+    for(t in 2:ncol(ysim)){
+      print(t)
+      if(spat == TRUE){
+        #G = rowSums(makeGplain(NN, ysim[, t-1], dx, dy, dt) * D)
+        G = (ysim[NN[, 1], t]*D + ysim[NN[, 2], t]*D + ysim[NN[, 3], t]*D + ysim[NN[, 1], t]*D) * (dt/(dx^2 + dy^2))
+        GID = ysim[, t] * D * (dt/(dx^2 + dy^2))
+        ysim[, t] = rnorm(n^2, ysim[, t-1] + G - 4 * GID + r * ysim[, t-1] * (1 - ysim[, t-1]), gamma)
+        ymat[, t] = abs(rnorm(n^2, ysim[, t], eta[t]))
+      } else {
+        ysim[, t] = rnorm(n^2, ysim[, t-1] + r * ysim[, t-1] * (1 - ysim[, t-1]), gamma)
+        ymat[, t] = abs(rnorm(n^2, ysim[, t], eta[t]))
+      }
+    }
+    return(list(ysim, ymat))
+}
