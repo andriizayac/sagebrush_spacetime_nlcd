@@ -1,8 +1,10 @@
 ---
-title: "stability_cfl"
+title: "Spatial logistic - stability"
 author: "AZ"
 date: "21 08 2020"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 ```{r, include=FALSE}
@@ -162,27 +164,28 @@ simsage <- function(ysim, r, k, D, dx, dy, dt, NN, spat = TRUE) {
 ```
 
 ### Stability analysis based on CFL criterion  
-The continuous and discretized reaction-diffusion models are as following:
+The reaction-diffusion model is as following:
 $$ \frac{\partial u}{\partial t} = 
   \delta(\frac{\partial^2 }{\partial x^2} + \frac{\partial^2 }{\partial y^2})u + ur(1-u)$$
 where, $u(t,x,y)$,  $\delta(x,y)$, and r is a constant.  
-Then, by dicretizing forwad in time and taking central difference in space:
+Then, we can dicretize using a finite difference method with forward difference in time and central in space (assuming $\Delta t = 1$):
 
 $$ 
 \begin{aligned}
 u_{t+\Delta t,x,y} = &
   u_{t,x,y} + ru_{t,x,y}(1-u_{t,x,y})+ \\
-  & \delta_{x,y}(-4u_{t,x,y})+ \\
+  & \bigg[ \delta_{x,y}(-4u_{t,x,y})+ \\
   & \delta_{x,y}u_{t,x-\Delta x,y}+\delta_{x,y}u_{t,x+\Delta x,y}+ \\
-  & \delta_{x,y}u_{t,x,y-\Delta y}+\delta_{x,y}u_{t,x,y+\Delta y}
+  & \delta_{x,y}u_{t,x,y-\Delta y}+\delta_{x,y}u_{t,x,y+\Delta y} \bigg] \frac{1}{(\Delta x^2 + \Delta y^2)}
 \end{aligned}
 $$
 
 The stability criterion used is calculated as:
-$$ CFL = \frac{\delta * \Delta t}{\Delta x} $$
+$$ CFL = \frac{\delta_{x,y} * \Delta t}{\Delta x} $$
 where $\delta$ is a diffusion rate, $\Delta x = \Delta y$, and the system is stable when $CFL < 1$.
 
 #### Simulations along $\Delta t$, $\delta = 1$:  
+
 ```{r, echo=FALSE, message=FALSE}
 dt <- c(.1, .5, .75, 1, 10, 100, 150, 200, 365) #seq(.6, 1.4, l = 9)
 Dvec <-  rep(1, 9) #seq(1, 500, l = 9) # 
@@ -200,6 +203,7 @@ for(i in 1:length(Dvec)){
 ```
   
 #### Simulations along $\delta$, $\Delta t = 1$:  
+
 ```{r, echo=FALSE, message=FALSE}
 dt <- rep(1, 9) #c(.1, .5, .75, 1, 10, 100, 150, 200, 365) #seq(.6, 1.4, l = 9)
 Dvec <-  seq(1, 500, l = 9) # rep(1, 9) #
