@@ -4,14 +4,17 @@ library(rgdal)
 library(leaflet)
 library(viridis)
 library(reshape2)
+library(dplyr)
+library(ggplot2)
 
 # === allow multi-core stan sa,mpling
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 
-
 years <- c(1985:2017)
 path <- "C:/Users/CaughlinLab/Desktop/Landsat_eros/"
+
+# ---
 
 sage <- readRDS(paste0(path, "usgs_sagebrush/sagelist_finite.rds"))
 dfspat <- readRDS(paste0(path, "mtch_polygons.rds"))
@@ -70,15 +73,16 @@ foreach(i = 1:100, .packages=c('raster', 'rstan')) %dopar% {
                        "y_pred", "y_pred01", "z_pred", "z_init", "gamma", "alpha", "alpha_pred", "sigma_alpha_pred"),
               save_warmup = FALSE)
   saveRDS(temp, paste0(path, "models_stan_eros/mod", i, ".rds"))
+  rm(t)
 }
 stopCluster(cl)
 #####################################################
 # === explore the fit models
 modlist <- list()
 datlist <- list()
-k_mean <- rep(NA, 25)
-diverge <- rep(NA, 25)
-for(i in 1:25) {
+k_mean <- rep(NA, 100)
+diverge <- rep(NA, 100)
+for(i in 1:100) {
   print(i)
   temp <- readRDS(paste0(path, "/models_stan_eros/", "mod", i, ".rds"))
   diverge[i] <- get_num_divergent(temp)
@@ -103,8 +107,8 @@ polygon(density(err), col = "blue")
 
 ### ---set up error data frame
 postsample <- length(with(modlist[[1]], alpha))
-err <- matrix(NA, postsample, 25)
-col <- viridis(25)
+err <- matrix(NA, postsample, 100)
+col <- viridis(100)
 for(j in 1:ncol(err)){
   print(j)
   post <- modlist[[j]]
@@ -119,22 +123,27 @@ for(i in 1:ncol(err)){polygon(density(err[, i]), col = col[i])}
 #legend("topright", legend = c("simple logistic", "+varying k, +proc err", "spatial"), fill=c(col[c(1,6)],"red"))
 
 # === explore variation in predictive capacity
-mahvar <- rep(NA, 25)
+mahdist <- readRDS("mahdist_matrix.rds")
+dfEnv <- readRDS("dfEnv_covars.rds")
+mahvar <- rep(NA, 100)
 for(i in 1:length(mahvar)) { 
   mahvar[i] = mahdist[ids[i], idsRef[i]]
 }
 
-cbind(dfEnv[1:25, ], k_mean, mahvar, diverge, t(err)) %>% melt(id.vars = c(names(dfEnv), "k_mean", "mahvar", "diverge")) %>% 
-  #ggplot(aes(y = value, x = as.factor(idvar))) + geom_boxplot() +
-  ggplot(aes(y = value, x = diverge)) + geom_point() +
-  labs(y = "MAE")
+a <- cbind(dfEnv[1:100, ], ha_clipped = dfspat$ha_clipped[1:100],  k_mean, mahvar, diverge, t(err)) %>% 
+  melt(id.vars = c(names(dfEnv), "k_mean", "mahvar", "diverge", "ha_clipped")) %>% 
+  group_by(idvar) %>% mutate(lower = quantile(value, .025), upper = quantile(value, .975), mean = mean(value)) %>% ungroup() #%>% 
+  ggplot(aes(y = mean, x = k_mean)) + geom_pointrange(aes(ymin = lower, ymax = upper),size = .1) +
+  # scale_colour_viridis("Pre-disturbance abundance") +
+  labs(y = "MAE", x = "Pre-disturbance cover, %") +geom_abline(intercept = 0, slope = 1) +
+  theme_bw()
 
 
 
 # ==== plot fire polygons with leaflet ####
 poly <- spTransform(df, CRS("+proj=longlat +datum=WGS84"))
-ids <- 1:25
-idsRef <- poly$closeMatch[1:25]
+ids <- 1:100
+idsRef <- poly$closeMatch[1:100]
 
 r1 <- sage[[ids[1]]][[1]]
 r2 <- sage[[ids[1]]][[1]]
@@ -155,6 +164,7 @@ leaflet() %>%
   addLegend(pal = pal, values = values(r1),
             title = "Sagebrush cover, %")
 
-#########################
-
-
+######################### export figures
+library(export)
+pathexport <- "C:/Users/CaughlinLab/Downloads/"
+graph2eps(file  = paste0(pathexport, "mae.eps"), width = 8, height = 6)
