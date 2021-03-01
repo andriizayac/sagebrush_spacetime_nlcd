@@ -11,7 +11,6 @@ data {
   vector[N] y_k_prior_sc = (y_k_prior - mean(y_k_prior)) ; //./ 2*sd(y_k_prior)
   vector[n] y_k_pred_sc = (y_k_pred - mean(y_k_pred)) ; //./ 2*sd(y_k_prior)
 } parameters {
-  real alpha;
   vector<lower=0>[N] r;          // pixel-level growt rate
   real<lower=0,upper=1> r_mu;       // avg growth 
   real<lower=0> r_sigma;    // growth variance
@@ -19,17 +18,10 @@ data {
   real<lower=0> k_mu;       // average (global) k
   real<lower=0> k_sigma;    // k variance 
   real<lower=0,upper=1> k_phi;               // change in post-burn caryying capacity
-  vector<lower=0>[T] eta;   // observation error
-  real<lower=0> gamma;        // observation error
+  vector<lower=0>[T-1] eta;   // observation error
   
-  vector<lower=0,upper=1>[N] z_init;          // initial state vector (non-dim in k)
-  vector<lower=0,upper=1>[n] z0;
-
-  vector<lower=0>[N] Z[T+1]; // latent states
 } transformed parameters {
 } model {
-  // priors: intercempts
-  alpha ~ normal(0, 1);
   // priors: demographic parameters
   r_mu ~ normal(.5, .5);
   r_sigma ~ exponential(5);
@@ -38,24 +30,14 @@ data {
   k_sigma ~ exponential(1);
   k_phi ~ normal(0, .1);
   eta ~ exponential(1); 
-  gamma ~ exponential(1);
-  
-  for(i in 1:N) z_init[i] ~ lognormal(0, 1);
-  for(i in 1:n) z0[i] ~ lognormal(0,1);
 
-  
-  Z[1] ~ normal(z_init, gamma);
-  y0pred ~ normal(z0, gamma);
-  for(t in 2:T+1)
-      Z[t] ~ normal(Z[t-1] + r .* Z[t-1] - r .* (Z[t-1] .* Z[t-1]), gamma);
-  
   k ~ normal(k_mu + k_phi * y_k_prior_sc, k_sigma);
 
-  y0 ~ normal(z_init, eta[1]);
-
-   for(t in 2:T+1){
-      y_mat[t-1] ~ normal(alpha + Z[t] .* k, eta[t-1]);
+   for(t in 2:T){
+     for(i in 1:N){
+      y_mat[i, t] ~ normal(y_mat[i,t-1] + r[i] * y_mat[i,t-1] - r[i] * (y_mat[i,t-1]^2) / k[i], eta[t]);
    }
+  }
 } generated quantities {
   /*
   matrix[T,n] y_pred01;

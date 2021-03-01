@@ -8,288 +8,103 @@ library(viridis)
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 
-# === calculate Mean Absoute Error between x and y
-mae=function(x,y){sum(abs(x-mean(y)))/length(x)}
-# plot pre- and post- fire rasters (based on the dfspat - matched data frame) 
-plotfire=function(id=NULL,offyr=offset,focal=TRUE,pol=dfspat,rast=sage){
-  par(mfrow=c(1,2))
-  i = ifelse(focal==T, dfspat$idvar[id], dfspat$closeMatch[id])
-  k = dfspat$Fire_Year[i] - 1984
-  plot(sage[[i]][[k - 1 + offyr[i]]], main=paste0(k -1 +1984,": pre"))
-  plot(sage[[i]][[k + offset[i]]], main=paste0(k + 1984,": post"))
-}
 # prepare intput data for non-spatial stan model
-dataprep = function(n=NULL,pol=NULL,rast=NULL,years=NULL,yroffset=NULL,
-                    seed=123,trsubset=.5,predsubset=1,threshold=FALSE,thresholdval=NULL){
-  # n: #row in the matched polygon data frame
-  # pol: polygon dataframe including target and ref sites
-  # rast: list of rasters corresponding to each target/ref polygon (each has 33 layers=years)
-  # years: vector of years - 1985:2017
-  # yroffset: mismatch b/w fire year and NLCD fire; df w/ 2 cols: target, ref
-  # trsubset: proportion to subset from the full dataset as training sample
-  # predsubset: proportion to predict over in the test dataset
-  # threshold: value [0,1] in shrub cover to include as a training dataset.Values closer to one will allow data points that introduce bias into 'r' parameter 
-  
-  set.seed(seed)
-  n=n
-  ids=c(pol$idvar[n],pol$closeMatch[n])
-  fyear = c(pol$Fire_Year[ids[1]],pol$Fire_Year[ids[2]])
-  if(fyear[1]<fyear[2]){
-    # subset post-disturbance trajectories
-    dftr = as.data.frame(rast[[ids[1]]],xy=F,na.rm = T)[, years >= fyear[1] + yroffset[ids[1]] ]
-    dftest = as.data.frame(rast[[ids[2]]],xy=F,na.rm = T)[, years >= fyear[2] + yroffset[ids[2]] ]
-    # create training indices
-    tr=sample(1:nrow(dftr), round(nrow(dftr) * trsubset))
-    tr_pred=sample(1:nrow(dftest), round(nrow(dftest) * predsubset))
-    # create training and test datasets, create pre-disutrbance means
-    y0_train = dftr[tr,1]
-    if(sum(years < fyear[1] - 1) == 1) {
-      y_k_prior = as.numeric(as.data.frame(rast[[ids[1]]],xy=F,na.rm = T)[tr, 1:sum(years < fyear[1] - 1)])
-    } else {
-      y_k_prior = as.numeric(apply(as.data.frame(rast[[ids[1]]],xy=F,na.rm = T)[tr, 1:sum(years < fyear[1] - 1)], 1, mean))
-    }
-    y0_predict = dftest[tr_pred,1]
-    y_k_pred = as.numeric(apply(as.data.frame(rast[[ids[2]]],xy=F,na.rm = T)[tr_pred, 1:sum(years < fyear[2] - 1)], 1, mean))
-    # standardize initial values to [0,1] for non-dimentional model
-    y0_tr = ifelse(y0_train < y_k_prior, y0_train / y_k_prior, y0_train / y0_train)
-    y0_pred = ifelse(y0_predict < y_k_pred, y0_predict / y_k_pred, y0_predict / y0_predict)
-    if(threshold==TRUE){
-      y0_train = ifelse(is.finite(y0_tr),y0_tr,0)
-      idx = which(y0_train < thresholdval)
-      while(length(idx) < 100) {
-        thresholdval = thresholdval + .1
-        idx = which(y0_train < thresholdval)
-      }
-      y_matrix = as.matrix(dftr[tr, ])[idx, ]
-      
-      dlist=list(N = nrow(y_matrix),
-                 T = ncol(dftr),
-                 # training data
-                 y_mat=t(y_matrix),
-                 y_k_prior = y_k_prior[idx],
-                 y0_tr = y0_train[idx],
-                 # predictions data
-                 y_k_pred = y_k_pred,
-                 y0_pred = ifelse(is.finite(y0_pred),y0_pred,0),
-                 N_pred = length(tr_pred),
-                 T_pred = ncol(dftest),
-                 # record threshold used
-                 cover_threshold = thresholdval,
-                 # input data sets
-                 dftr=as.data.frame(y_matrix),
-                 dftest=dftest[tr_pred,])
-    } else {
-    dlist=list(N = length(tr),
-               T = ncol(dftr),
-               # training data sets
-               y_mat=t(as.matrix(dftr[tr,])),
-               y_k_prior = y_k_prior,
-               y0_tr = ifelse(is.finite(y0_tr),y0_tr,0),
-               # predictions data
-               y_k_pred = y_k_pred,
-               y0_pred = ifelse(is.finite(y0_pred),y0_pred,0),
-               N_pred = length(tr_pred),
-               T_pred = ncol(dftest),
-               # input data sets
-               dftr=dftr[tr,],
-               dftest=dftest[tr_pred,])
-    }
-  } else {
-    # subset post-disturbance trajectories
-    dftr = as.data.frame(rast[[ids[2]]],xy=F,na.rm = T)[, years>=fyear[2] + yroffset[ids[2]] ]
-    dftest = as.data.frame(rast[[ids[1]]],xy=F,na.rm = T)[, years>=fyear[1] + yroffset[ids[1]] ]
-    # create training indices
-    tr=sample(1:nrow(dftr),round(nrow(dftr)*trsubset))
-    tr_pred=sample(1:nrow(dftest),round(nrow(dftest)*predsubset))
-    # create training and test datasets, create pre-disutrbance means
-    y0_train = dftr[tr,1]
-    if(sum(years < fyear[2] - 1) == 1){
-      y_k_prior = as.numeric(as.data.frame(rast[[ids[2]]],xy=F,na.rm = T)[tr, 1:sum(years < fyear[2] - 1)])
-    } else {
-      y_k_prior = as.numeric(apply(as.data.frame(rast[[ids[2]]],xy=F,na.rm = T)[tr, 1:sum(years < fyear[2] - 1)], 1, mean))
-    }
-    y0_predict = dftest[tr_pred,1]
-    y_k_pred = as.numeric(apply(as.data.frame(rast[[ids[1]]],xy=F,na.rm = T)[tr_pred, 1:sum(years < fyear[1] - 1)], 1, mean))
-    # standardize initial values to [0,1] for non-dimentional model
-    y0_tr = ifelse(y0_train < y_k_prior, y0_train / y_k_prior, y0_train / y0_train)
-    y0_pred = ifelse(y0_predict < y_k_pred, y0_predict / y_k_pred, y0_predict / y0_predict)
-    if(threshold==TRUE){
-      y0_train = ifelse(is.finite(y0_tr), y0_tr, 0)
-      idx=which(y0_train < thresholdval)
-      while(length(idx) < 100) {
-        thresholdval = thresholdval + .1
-        idx=which(y0_train < thresholdval)
-      }
-      y_matrix = as.matrix(dftr[tr, ])[idx, ]
-      
-      dlist=list(N = nrow(y_matrix),
-                 T = ncol(dftr),
-                 # training data
-                 y_mat=t(y_matrix),
-                 y_k_prior = y_k_prior[idx],
-                 y0_tr = y0_train[idx],
-                 # predictions data
-                 y_k_pred = y_k_pred,
-                 y0_pred = ifelse(is.finite(y0_pred),y0_pred,0),
-                 N_pred = length(tr_pred),
-                 T_pred = ncol(dftest),
-                 # record threshold used
-                 cover_threshold = thresholdval,
-                 # input data sets
-                 dftr=as.data.frame(y_matrix),
-                 dftest=dftest[tr_pred,])
-    } else {
-    dlist=list(N = length(tr),
-               T = ncol(dftr),
-               # training data
-               y_mat=t(as.matrix(dftr[tr,])),
-               y_k_prior = y_k_prior,
-               y0_tr = ifelse(is.finite(y0_tr),y0_tr,0),
-               # predictions data
-               y_k_pred = y_k_pred,
-               y0_pred = ifelse(is.finite(y0_pred),y0_pred,0),
-               N_pred = length(tr_pred),
-               T_pred = ncol(dftest),
-               # input data sets
-               dftr=dftr[tr,],
-               dftest=dftest[tr_pred,])
-    }
-  }
-  return(dlist)
-}
 
+years <- c(1985:2017)
+path <- "~/Google Drive/Data/nlcd_fires_matched/"
+fires <- readOGR("~/Google Drive/GEE_seminar/Wildfires_1870_2015_Great_Basin_SHAPEFILE/Wildfires_1870_2015_Great_Basin.shp")
 
-years=c(1985:2017)
-path = "~/Google Drive/Data/nlcd_fires_matched/"
+sage <- readRDS(paste0(path,"sage_subset/sagelist_finite.rds"))
+dfspat <- readRDS(paste0(path,"mtch_polygons.rds"))
 
-sage=readRDS(paste0(path,"sage_subset/sagelist_finite.rds"))
-dfspat = readRDS(paste0(path,"mtch_polygons.rds"))
-
-df=spTransform(dfspat,sage[[1]][[1]]@crs)
-plot(df[c(2,43),])
-plot(sage[[df$idvar[2]]][[1]],add=T)
+df <- spTransform(dfspat,sage[[1]][[1]]@crs)
+plot(df[c(1),])
+plot(sage[[df$idvar[1]]][[1]],add=T)
 plot(sage[[df$idvar[43]]][[1]],add=T)
 
 #dfsubset = df[df$ha_clipped < 50 & df$Fire_Year > 1990,]
 #sage1 = subset(sage, df$idvar %in% dfsubset$idvar)
+i <- 1
+mat <- as.data.frame(sage[[3]], xy = FALSE, na.rm = TRUE)[1:1000, ]
+matplot(t(mat), type = "l", col = viridis(10), ylab = "Cover, %", xlab = "Time, years")
 
 plot(sage[[1]][[1]])
 plot(dfspat[1,],add=T)
 ################## find the fire year based on the trajectories; Create offset variable
-n = nrow(dfspat)
-offset = rep(NA, n)
-yrs = dfspat$Fire_Year - 1984
-sagemeans = matrix(NA, nrow = n, ncol = 33)
+n <- nrow(dfspat)
+offset <- rep(NA, n)
+yrs <- dfspat$Fire_Year - 1984
+sagemeans <- matrix(NA, nrow = n, ncol = 33)
 for(i in 1:n){
   sagemeans[i, ] = cellStats(sage[[i]], mean)
   f = which.min(diff(sagemeans[i, ])) + 1
- if (yrs[i]==f-1) {
+ if (yrs[i] == f - 1) {
     offset[i] = 1
-  }  else if (yrs[i]==f-2) {
+  }  else if (yrs[i] == f - 2) {
     offset[i] = 2
-  } else if (yrs[i] == f+1) {
+  } else if (yrs[i] == f + 1) {
     offset[i] = -1
   } else {
     offset[i] = 0
   }
 }
-offset[250] = -1
-offset[25] = 1
-ind=which(offset == 0)
-ind=1:nrow(dfspat)
+offset[250] <- -1
+offset[25] <- 1
+ind <- which(offset == 0)
+ind <- 1:nrow(dfspat)
 # plot the ts of average shrub values with proposed fire time point
-fig=function(dat=sagemeans, index=dfspat$closeMatch, offs=offset, i=k, years=yrs){
-  plot(dat[index[i],],type="b",main=paste0("id=",index[i],": offset=",offs[index[i]]))
-  abline(v=years[index[i]]+offs[index[i]],lwd=2,col="red")
-  k <<- k+1
-}
-k=1
-fig()
+k = 9
+fig(index = dfspat$closeMatch)
 ####################################################################
 
-# assemble trainign data set. use older fire in each pair as a training dataset 
-n=23
-ids=c(dfspat$idvar[n],dfspat$closeMatch[n])
-fyear = c(dfspat$Fire_Year[ids[1]],dfspat$Fire_Year[ids[2]])
-
-
-dftr = as.data.frame(sage[[ids[2]]],xy=F,na.rm = T)[,years>=fyear[2]-offset[ids[2]] ]
-dftest = as.data.frame(sage[[ids[1]]],xy=F,na.rm = T)[,years>=fyear[1]-offset[ids[1]]]
-matplot(t(as.matrix(dftest[tr_pred,])),type="l",main = "test")
-matplot(t(as.matrix(dftr[tr,])),type="l", main="training")
-set.seed(123)
-tr=sample(1:nrow(dftr),round(nrow(dftr)*.02))
-tr_pred=sample(1:nrow(dftest),round(nrow(dftest)*.02))
-
-y0_train = dftr[tr,1]
-y_k_prior = as.numeric(as.data.frame(sage[[ids[1]]],xy=F,na.rm = TRUE)[tr,sum(years<fyear[1]-1)])
-y0_predict = dftest[tr_pred,1]
-y_k_pred = as.numeric(as.data.frame(sage[[ids[2]]],xy=F,na.rm = TRUE)[tr_pred,sum(years<fyear[2]-1)])
-
-y0_tr = ifelse(y0_train<y_k_prior,y0_train/y_k_prior,y0_train/y0_train)
-y0_pred = ifelse(y0_predict<y_k_pred,y0_predict/y_k_pred,y0_predict/y0_predict)
-
-dlist=list(y_mat=t(as.matrix(dftr[tr,])),
-           N = length(tr),
-           T = ncol(dftr),
-           y_k_prior = y_k_prior,
-           y0_tr = ifelse(is.finite(y0_tr),y0_tr,0),
-           # predictions data
-           y_k_pred = y_k_pred,
-           y0_pred = ifelse(is.finite(y0_pred),y0_pred,0),
-           N_pred = length(tr),
-           T_pred = ncol(dftest),
-           dftr=as.data.frame(as.matrix(dftr[tr,])),#dftr[tr,],
-           dftest=dftest[tr,])
-
-
 ### input data
-alist=dataprep(n=15,pol=dfspat,rast=sage,year=years,yroffset=offset,trsubset=.05,
-               predsubset = .1,threshold = FALSE,thresholdval = .1)
-matplot(t(as.matrix(alist$dftr)),type="l")
+alist <- dataprep2(n = 1, pol = dfspat, rast = sage, year = years, yroffset = offset, trsubset = .25, 
+                   predsubset = 1, threshold = TRUE, thresholdval = .1)
+matplot(t(as.matrix(alist$dftr)), type = "l")
 # --- fit the model to the tr fire and predict over the test fire
-model2a=stan_model("~/Desktop/CodingClub/stan_models/rdiff_discrete_landsat_non_spat_statespace.stan")
-model2=stan_model("~/Desktop/CodingClub/stan_models/rdiff_discrete_landsat_non_spat.stan")
-mod2a_1=sampling(model2a, data=alist,iter=50,warmup=45,chains=3,seed=125,
-             pars=c("Z","r","r_mu","r_sigma","k","k_mu","k_phi","k_sigma","eta","y_pred","y_pred01","z_pred","z_init","gamma","alpha"),
-             save_warmup=FALSE)
+model2a <- stan_model("~/Desktop/CodingClub/stan_models/rdiff_discrete_landsat_non_spat_statespace.stan")
+model2 <- stan_model("~/Desktop/CodingClub/stan_models/rdiff_discrete_landsat_non_spat.stan")
+mod2a_1 <- sampling(model2a, data = alist, iter = 50, warmup = 45, chains = 3, seed = 125,
+             pars = c("Z", "r", "r_mu", "r_sigma", "k", "k_mu", "k_phi", "k_sigma", "eta", 
+                      "y_pred", "y_pred01", "z_pred", "z_init", "gamma", "alpha"),
+             save_warmup = FALSE)
 
 # --- mean aboslute error
-post=rstan::extract(mod2a_1)
-yp=apply(with(post,Z),c(2,3),mean)#-matrix(rep(gamma,930),ncol=930)
-matplot(yp[,],type='l')
+post <- rstan::extract(mod2a_1)
+yp <- apply(with(post, Z), c(2, 3), mean)#-matrix(rep(gamma,930),ncol=930)
+matplot(yp[,], type = 'l')
 #matplot(t(as.matrix(alist$dftr)),type="l",add=F,col=rgb(0,0,0,.25))
-plot(t(yp)~jitter(as.matrix(alist$dftest)),pch=3,xlab="NLCD",ylab="Predicted",col=rgb(0,0,0,.5))
-abline(0,1,col="red",lwd=3)
+plot(t(yp) ~ jitter(as.matrix(alist$dftest)), pch = 3, xlab = "NLCD", ylab = "Predicted", col = rgb(0,0,0,.5))
+abline(0, 1, col = "red", lwd = 3)
 
-y_pred=with(post,y_pred)
-err=rep(NA,dim(y_pred)[1])
+y_pred <- with(post, y_pred)
+err <- rep(NA, dim(y_pred)[1])
 
-for(i in 1:length(err)){err[i] = mae(t(y_pred[i,,]),as.matrix(alist$dftest))}
+for(i in 1:length(err)){ err[i] = mae(t(y_pred[i, , ]), as.matrix(alist$dftest)) }
 plot(density(err))
-polygon(density(err),col="blue")
+polygon(density(err), col = "blue")
 ### ---set up error data frame
-err=matrix(NA,dim(y_pred)[1],8)
-col=viridis(8)
+err <- matrix(NA, dim(y_pred)[1], 8)
+col <- viridis(8)
 for(j in 1:ncol(err)){
-  post=rstan::extract(get(paste0("m",j)))
-  y_pred=with(post,y_pred)
+  post <- rstan::extract(get(paste0("m", j)))
+  y_pred <- with(post, y_pred)
   for(i in 1:dim(y_pred)[1]){
-    err[i,j]=mae((y_pred[i,,]),mat[test,])
+    err[i,j] <- mae(y_pred[i, , ], mat[test, ])
   }
 }
-plot(density(err[,1]),col=col[1],xlim=c(1.5,5),ylim=c(0,15),main="Out-of-sample error",xlab="MAE")
-for(i in 1:ncol(err)){polygon(density(err[,i]),col=col[i])}
+plot(density(err[, 1]), col = col[1], xlim = c(1.5, 5), ylim = c(0, 15), main = "Out-of-sample error", xlab = "MAE")
+for(i in 1:ncol(err)){ polygon(density(err[, i]), col = col[i]) }
 legend("topright",legend=c("simple logistic","+varying k, +proc err","spatial"),fill=c(col[c(1,6)],"red"))
 
 ############################################## dopar
 library(foreach)
 library(doParallel)
-cl=makeCluster(3)
+cl <- makeCluster(3)
 registerDoParallel(cl)
-#modlist = 
-foreach(i=1:25,.packages=c('raster','rstan')) %dopar% {
-  alist=dataprep(n=i,pol=dfspat,rast=sage,year=years,yroffset=offset,trsubset=.25,
+# modlist = 
+foreach(i = 1:25, .packages = c('raster','rstan')) %dopar% {
+  alist <- dataprep2(n = i, pol = dfspat, rast = sage, year = years, yroffset = offset, trsubset = .25,
                  predsubset = 1,threshold = TRUE,thresholdval = .1)
   # temp =stan(file="~/Desktop/CodingClub/stan_models/rdiff_discrete_landsat_non_spat_statespace.stan",
   #            data=alist,iter=50,warmup=45,chains=3,seed=125,
@@ -298,37 +113,85 @@ foreach(i=1:25,.packages=c('raster','rstan')) %dopar% {
   saveRDS(alist,paste0("~/Downloads/dat",i,".rds"))
 }
 stopCluster(cl)
+
+################################## 
+res1 <- readRDS("~/Downloads/res1.rds")
+ggplot(res1 , aes(y = value, x = as.factor(idvar))) + # geom_pointrange(aes(ymin = lower, ymax = upper), size = .1) +
+  geom_boxplot() + 
+  # scale_colour_viridis("Pre-disturbance abundance") +
+  labs(y = "MAE", x = "ID") +  # geom_abline(intercept = 0, slope = 1) +
+  theme_bw() + theme(axis.text.x = element_blank())
+
+res1a <- res1[which(res1$mean < 5 & res1$k_mean > 10), ]
+
 #####################################################
 # --- plot fire polygons with leaflet ####
-poly = spTransform(df,CRS("+proj=longlat +datum=WGS84"))
+poly <- spTransform(fires, CRS("+proj=longlat +datum=WGS84"))
+ids1 <- poly$idvar[1:100]
+ids1Ref <- poly$closeMatch[1:100]
 
-r1=sage[[ids[1]]][[1]]
-r2=sage[[ids[2]]][[1]]
+r1=sage[[ids1[1]]][[1]]
+r2=sage[[ids1[2]]][[1]]
 #crs(r1) = sp::CRS("+init=epsg:3857")
 
 pal <- colorNumeric(viridis(5), values(r1),
                     na.color = "transparent")
+leaflet(poly[poly$Fire_Name == "Soda",]) %>%
+  addPolygons(stroke = T, fillColor = "red", fillOpacity = 1) %>%
+  addTiles(group = "OSM",
+           options = providerTileOptions(minZoom = .1, maxZoom = 100)) %>%
+  addProviderTiles("Esri.WorldTopoMap",    
+                   group = "Topo") %>%
+  addScaleBar(position = "bottomright")
 
-leaflet(poly[ids,]) %>% addPolygons(color="blue") %>%
+
+leaflet() %>% 
+  # addPolygons(data = poly, color = "black") %>%
+  addPolygons(data = poly[ids1, ], color = "red") %>%
+  addPolygons(data = poly[ids1Ref, ], color = "blue") %>%
   addTiles(group = "OSM",
                        options = providerTileOptions(minZoom = .1, maxZoom = 100)) %>%
   addProviderTiles("Esri.WorldTopoMap",    
-                   group = "Topo") %>%
-  addRasterImage(r1, colors = pal, opacity = 0.8,project = TRUE) %>%
-  addRasterImage(r2, colors = pal, opacity = 0.8,project = TRUE) %>%
-  addLegend(pal = pal, values = values(r1),
-            title = "Sagebrush cover, %")
+                   group = "Topo") %>% 
+  addScaleBar(position = "bottomright")
+
+  # addRasterImage(r1, colors = pal, opacity = 0.8,project = TRUE) %>%
+  # addRasterImage(r2, colors = pal, opacity = 0.8,project = TRUE) %>%
+  # addLegend(pal = pal, values = values(r1),
+  #           title = "Sagebrush cover, %")
 
 
+#### Export figures
+# ----
+library(export)
+pathfig <- "~/Downloads/"
+graph2eps(file = paste0(pathfig, "figh2.eps"), height = 6, width = 6)
 
-# assemble trainign data set. use older fire in each pair as a training dataset 
+library(htmlwidgets)
+saveWidget(m, file = paste0(pathfig, "figmap.html"))
+library(mapview)
+mapshot(m, file = paste0(pathfig, "figmap1.pdf"))
+
+dat1 <- readRDS("~/Downloads/dat1.rds")
+dat9 <- readRDS("~/Downloads/dat9.rds")
+mod1 <- readRDS("~/Downloads/mod1.rds")
+mod9 <- readRDS("~/Downloads/mod9.rds")
 
 
+# --- mean aboslute error
+post <- rstan::extract(mod9)
+yp <- apply(with(post, y_pred), c(2, 3), mean)#-matrix(rep(gamma,930),ncol=930)
+matplot(apply(t(refdat),1,mean), type = 'l', col = viridis(10), 
+        ylab = "Cover, %", xlab = "Time, years", main = "Training data")
+#matplot(t(as.matrix(alist$dftr)),type="l",add=F,col=rgb(0,0,0,.25))
+refdat <- as.data.frame(dat9$dftr, xy = FALSE, na.rm = TRUE)
+plot(t(yp) ~ jitter(as.matrix(dat9$dftest)), pch = 3, cex = .25, xlab = "NLCD", ylab = "Predicted", col = rgb(0,0,0,.5))
+abline(0, 1, col = viridis(10)[5], lwd = 3)
 
-##### ==== set up a loop to run stan model
-vec=rep(NA,25)
-for(i in 1:25){
-  vec[i]=modlist[[i]]$N
-}
-plot(vec,type="l")
+y_pred <- with(post, y_pred)
+err <- rep(NA, dim(y_pred)[1])
+
+for(i in 1:length(err)){ err[i] = mae(t(y_pred[i, , ]), as.matrix(alist$dftest)) }
+plot(density(err))
+polygon(density(err), col = "blue")
 

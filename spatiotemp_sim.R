@@ -101,9 +101,9 @@ makeGplain <- function(NN, uvec , dx, dy, dt){
 # names(df1) <- c('x', 'y', paste0('year', years[1:14]))
 
 # === a setup for deterministic simulation
-n <- 15
-T <- 9
-matsim <- matrix(rnorm(n^2, 1, .1), n, n)
+n <- 30
+T <-22
+matsim <- matrix(runif(n^2, 0.001, .002), n, n)
 NN0 <- neighborhood(raster(matsim))
 bndIdx = which(apply(NN0, 1, function(x) {sum(x == 0) > 0 }))
 NN <- NN0
@@ -123,65 +123,56 @@ dy <- 30
 dt <- 1
 
 # demographic parameters
-r <- .5
-k <- 15
-D <- rnorm(n^2, 50, 5)# rep(50, n^2)
+r <- .7
+k <- 1
+D <- rep(100, n^2)
 
 # initiate the simulation
-var <- sample(n, n/3)
+# var <- sample(n, n/3)
 matsim[var, var] <- k/2 #rnorm(25, 2, .1)
-ysim <- matrix(.01, n^2, T) #runif(n^2, 0, k/3)
+# matsim[1:2, ] <- k/2 #rnorm(25, 2, .1)
+ysim <- matrix(0, n^2, T) #runif(n^2, 0, k/3)
 ysim[, 1] <- as.numeric(matsim)
-ysim <- ysim/k
-
-simsage <- function(ysim, r, k, D, dx, dy, dt, NN, spat = TRUE) {
-  if(sum((ysim[, 1] > k)) > 0){
-    return("error")
-  } else{
-    for(t in 2:ncol(ysim)){
-      print(t)
-      if(spat == TRUE){
-        G = makeGplain(NN, ysim[, t-1], dx, dy, dt)
-        ysim[, t] = ysim[, t-1] + G %*% D + r * ysim[, t-1] * (1 - ysim[, t-1])
-      } else {
-        ysim[, t] = ysim[, t-1] + r * ysim[, t-1] * (1 - ysim[, t-1])
-      }
-    }
-  return(ysim)
-  }
-}
+ysim <- ysim
 
 ysim <- simsage(ysim = ysim, r = r, k = k, D = D, 
                dx = dx, dy = dy, dt = dt, NN = NN,
-               spat = TRUE)
+               spat = FALSE)
 
-matplot(t(ysim) * k, type = "l" , ylab = "Cover, %", xlab = "Time, years", col = viridis(n))
+matplot(t(ysim[,]) , type = "l" , ylab = "Cover, %", xlab = "Time, years", col = viridis(n))
 # plot raster time-series
-par(mfrow = c(3, 3), mar = c(1, 1, 1, 1))
+par(mfrow = c(3, 3), mar = c(1, 2.5, 1, 2))
 for(i in 1:T){
   ymat = wrap(ysim[, i], # t(mat[i, ]), #
               raster(matsim))
-  plot(raster(ymat))
-  #plot(poly[[i]])
+  plot(raster(ymat), col = viridis(25))
+  rastlist[[i]] <- raster(ymat)
 }
 dev.off()
+raststack <- stack(rastlist)
+animate(raststack, pause=1, main = c(1:9), zlim = c(0,1), maxpixels=900, n=1, col = viridis(10))
+saveGIF(for(i in 1:T){raster::plot(raststack[[i]], col = viridis(20), main = paste("Time:", i))}, 
+        movie.name = "~/Downloads/animation2.gif", interval=1)
 
-# === stability analysis
-dt <- seq(.1, 50, l = 9)
-Dvec <- rep(50, 9) #seq(0, 300, l = 9)
+
+# === stability analysis ####
+dt <- rep(1, 9) #c(.1, .5, .75, 1, 10, 100, 150, 200, 365) #seq(.6, 1.4, l = 9)
+Dvec <-  seq(1, 500, l = 9) # rep(1, 9) #
 D <- matrix(NA, n^2, T)
-par(mfrow = c(3, 3), mar = c(1, 1, 1, 1))
+par(mfrow = c(3, 3), mar = c(2, 1, 2.5, 1))
 for(i in 1:length(Dvec)){
   D[, i] = Dvec[i]
   ysim <- simsage(ysim = ysim, r = .9, k = k, D = D[, i], 
                   dx = dx, dy = dy, dt = dt[i], NN = NN,
                   spat = TRUE)
-  matplot(t(ysim[-bndIdx,]), type="l" , ylab="Cover, %", xlab="Time, years", col = viridis(n))
+  CFL = round((mean(Dvec[i]) * dt[i]) / dx, 4)
+  matplot(t(ysim[-bndIdx,]), type="l" , ylab="Cover, %", xlab="Time, years", col = viridis(n), 
+          main = paste("dt =", dt[i], ", CFL =", CFL))
 }
 
 # === a setup for stochastic state-space simulation
 n <- 15
-T <- 9
+T <- 12
 matsim <- matrix(runif(n^2, 2, 4), n, n)
 NN0 <- neighborhood(raster(matsim))
 bndIdx = which(apply(NN0, 1, function(x) {sum(x == 0) > 0 }))
@@ -202,51 +193,20 @@ dt <- 1
 
 # demographic parameters
 r <- .7
-D <- rnorm(n^2, 50, 5)
+D <- rep(100, n^2) # rnorm(n^2, 100, .5)
 
-# stat parameters
-alpha <- 1
-k_phi <- -.2
-k_mu <- 15
-k_pr <- rnorm(n^2, 15, 2)
-k_sigma <- 1
-k <- rnorm(n^2, k_mu + k_phi * k_pr, k_sigma)
-
-gamma <- .05
-eta <- seq(1, 4, l = T)
+# errors
+gamma <- .01
+eta <- seq(.03, .05, l = T)
 
 # initiate the simulation
-matsim <- matrix(rgamma(n^2, 5, 1.5), n, n)
-ysim <- matrix(0, n^2, T) 
-ysim[, 1] <- as.numeric(matsim)
-ysim[, 1] <- ysim[, 1]/k
-ymat <- ysim * k
-simsage_statespace <- function(ysim, r, k, D, dx, dy, dt, NN, spat = TRUE,
-                               alpha, k_mu, k_phi, k_sigma, k_pr, 
-                               gamma, eta) {
-  if(sum((ysim[, 1] > k)) > 0){
-    return("error")
-  } else{
-    for(t in 2:ncol(ysim)){
-      print(t)
-      if(spat == TRUE){
-        #G = rowSums(makeGplain(NN, ysim[, t-1], dx, dy, dt) * D)
-        G = (ysim[NN[, 1], t]*D + ysim[NN[, 2], t]*D + ysim[NN[, 3], t]*D + ysim[NN[, 1], t]*D) * (dt/(dx^2 + dy^2))
-        GID = ysim[, t] * D * -4 * (dt/(dx^2 + dy^2))
-        ysim[, t] = rnorm(n^2, ysim[, t-1] + G + GID + r * ysim[, t-1] * (1 - ysim[, t-1]), gamma)
-        ymat[, t] = abs(rnorm(n^2, ysim[, t] * k, eta[t]))
-      } else {
-        ysim[, t] = rnorm(n^2, ysim[, t-1] + r * ysim[, t-1] * (1 - ysim[, t-1]), gamma)
-        ymat[, t] = abs(rnorm(n^2, ysim[, t] * k, eta[t]))
-      }
-    }
-    return(list(ysim, ymat))
-  }
-}
+zinit <- matrix(runif(n^2, .1, .11), n, n)
+zmat <- matrix(0, n^2, T+1)
+zmat[, 1] <- as.numeric(zinit)
+ymat <- matrix(0, n^2, T) 
 
-ysim <- simsage_statespace(ysim = ysim, r = r, k = k, D = D, 
-                dx = dx, dy = dy, dt = dt, NN = NN, spat = TRUE,
-                alpha, k_mu, k_phi, k_sigma, k_pr, 
+ysim <- simsage_statespace(ysim = zmat, ymat = ymat, r = r, k = k, D = D, 
+                dx = dx, dy = dy, dt = dt, NN = NN, spat = FALSE,
                 gamma, eta)
 
 matplot(t(ysim[[2]]), type = "l" , ylab = "Cover, %", xlab = "Time, years", col = viridis(n))
@@ -274,28 +234,25 @@ points(1,log(mean(ysim[,1])),col="green",cex=2,pch=19)
 
 # === stan model 
 dlist <- list(N = n^2, T = T, 
-              y_mat = t(ysim[[2]]), y0_tr = ysim[[1]][, 1], 
-              y_k_prior = k_pr,
+              y_mat = t(ysim[[2]]), y0_tr = as.numeric(zinit),#ysim[[2]][, 1], 
               NN = NN)
 library(rstan)
 m <- stan(file = "rdiff_discrete_plain_statespace.stan",
               data = dlist, chains = 3, iter = 300, warmup = 275)
-plot(m, pars = c("r", "k_phi", "k_sigma", "gamma"))
-plot(m, pars = c("eta", "k_mu"))
-plot(m, pars = c("Delta"))
+print(m, pars = c("r"))
+plot(m, pars = c("eta"))
+# plot(m, pars = c("Delta"))
 
-mat <- with(extract(m), Z)
+mat <- with(rstan::extract(m), Z)
 mat <- apply(mat, c(2,3), mean)
-khat <- with(extract(m), k)
-khat <- apply(khat, 2, mean)
-zinit <- with(extract(m), z_init)
-zinit <- apply(zinit, 2, mean)
+init <- with(extract(m), z_init)
+init <- apply(init, 2, mean)
 
-matplot(mat[-1, ] * khat, type = "l" , ylab = "Cover, %", xlab = "Time, years", col = viridis(n))
+matplot(mat[-1, ], type = "l" , ylab = "Cover, %", xlab = "Time, years", col = viridis(n))
 matplot(t(ysim[[1]]) * k, type = "l" , ylab = "Cover, %", xlab = "Time, years", col = viridis(n))
-plot(khat ~ k, pch = 19)
-abline(0, 1, col = "red", lwd = 3, lty = "dashed")
-plot(zinit ~ ysim[[1]][, 1])
+plot(mat[-1, ] ~ t(ysim[[1]]))
+plot(init ~ as.numeric(zinit))
+abline(0, 1)
 
 vec <- matrix(1:n^2, n, n)
 vec <- ifelse(vec %in% bndIdx, 4, 5)
@@ -307,7 +264,7 @@ par(mfrow = c(3, 3), mar = c(1, 1, 1, 1))
 for(i in 1:T){
   mat1 <- t(mat[-1, ])
   a <- abs(mat1[i, ] - t(ysim[[1]])[i, ])
-  plot(raster(wrap(a, raster(matsim))))
+  plot(raster(wrap(a, raster(matsim))), col = viridis(10))
 }
 
 #### posterior predictions
@@ -323,11 +280,6 @@ genPred <- function(model) {
   }
 }
 
-y <- rep(NA, 50)
-y[1] <- 1
-for(i in 2:50) { y[i] = rlnorm(1, y[i-1], .0001)}
-plot(y, type = "l")
-
 
 
 adjacencies <- raster::adjacent(raster(matsim), 1:raster::ncell(raster(matsim)), 4, pairs=TRUE)
@@ -337,3 +289,12 @@ a = matrix(1:9, 3, 3)
 arast = raster(a)
 c = adjacent(arast, 1:ncell(arast), 4, pairs = T, include = TRUE)
 adj = table(arast[c[, 1]], arast[c[, 2]])
+
+
+### === Gompertz model
+
+
+#### Export figures ####
+library(export)
+pathfig <- "~/Downloads/"
+graph2eps(file = paste0(pathfig, "fig_3.eps"), height = 3, width = 3.5)

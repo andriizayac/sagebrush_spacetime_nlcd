@@ -3,8 +3,8 @@ title: "reaction_diffusion_model"
 author: "AZ"
 date: "6/15/2020"
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 
 Studies of ecological movement and dynamic spatio-temporal processes often implement reaction-diffusion models that mechanistically underlie the process in question. Among several examples, three (at least) types of diffusion have been implemented  that differ in how the diffusion process is modeled (i.e., where the coefficient is placed in the operator):  
