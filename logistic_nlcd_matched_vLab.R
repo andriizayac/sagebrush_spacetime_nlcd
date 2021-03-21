@@ -1,4 +1,4 @@
-library(rstan)
+library(brms)
 library(raster)
 library(rgdal)
 library(leaflet)
@@ -14,69 +14,145 @@ rstan_options(auto_write = TRUE)
 years <- c(1985:2017)
 path <- "C:/Users/CaughlinLab/Desktop/Landsat_eros/"
 
-# ---
+# prepare intput data for non-spatial stan model
 
-sage <- readRDS(paste0(path, "usgs_sagebrush/sagelist_finite.rds"))
-dfspat <- readRDS(paste0(path, "mtch_polygons.rds"))
+years <- c(1985:2018)
+path <- "~/Desktop/SSM_PDE/nlcd_subset/"
+fires <- readOGR(paste0(path,"GB_wildfire_subset_1951_2018_ct_1_Rx0_blm_epsg4326.shp"))[1:10,]
 
-df <- spTransform(dfspat, sage[[1]][[1]]@crs)
-plot(df[c(2, 43), ])
-plot(sage[[df$idvar[2]]][[1]], add = T)
-plot(sage[[df$idvar[43]]][[1]], add = T)
+sage <- readRDS(paste0(path,"sagelist_subs.rds"))
+sagecrs <- sage[[1]]@crs
+
+df <- spTransform(fires, sagecrs)
+plot(df[c(4),])
+plot(sage[[df$idvar[1]]][[1]],add=T)
 
 #dfsubset = df[df$ha_clipped < 50 & df$Fire_Year > 1990,]
 #sage1 = subset(sage, df$idvar %in% dfsubset$idvar)
 
-plot(sage[[1]][[1]])
-plot(dfspat[1,],add=T)
-################## find the fire year based on the trajectories; Create offset variable
-n <- nrow(dfspat)
-offset <- rep(NA, n)
-yrs <- dfspat$Fire_Year - 1984
-sagemeans <- matrix(NA, nrow = n, ncol = 33)
-for(i in 1:n){
-  sagemeans[i, ] <- cellStats(sage[[i]], mean)
-  f <- which.min(diff(sagemeans[i, ])) + 1
- if (yrs[i] == f - 1) {
-    offset[i] = 1
-  }  else if (yrs[i] == f - 2) {
-    offset[i] = 2
-  } else if (yrs[i] == f + 1) {
-    offset[i] = -1
-  } else {
-    offset[i] = 0
-  }
-}
-offset[250] <- -1
-offset[25] <- 1
-ind <- which(offset == 0)
-ind <- 1:nrow(dfspat)
+mat <- as.data.frame(sage[[1]], xy = FALSE, na.rm = TRUE)
+matplot(t(mat), type = "l", col = viridis(10), ylab = "Cover, %", xlab = "Time, years")
+abline(v = 22)
+# === find the fire year based on the trajectories; Create offset variable
+# n <- nrow(dfspat)
+# offset <- rep(NA, n)
+# yrs <- dfspat$Fire_Year - 1984
+# sagemeans <- matrix(NA, nrow = n, ncol = 33)
+# for(i in 1:n){
+#   sagemeans[i, ] <- cellStats(sage[[i]], mean)
+#   f <- which.min(diff(sagemeans[i, ])) + 1
+#  if (yrs[i] == f - 1) {
+#     offset[i] = 1
+#   }  else if (yrs[i] == f - 2) {
+#     offset[i] = 2
+#   } else if (yrs[i] == f + 1) {
+#     offset[i] = -1
+#   } else {
+#     offset[i] = 0
+#   }
+# }
+# offset[250] <- -1
+# offset[25] <- 1
+# ind <- which(offset == 0)
+# ind <- 1:nrow(dfspat)
+# 
+# k=1
+# fig()
+# =============================================================
+# see pxlmatching.R 
+tfires <- readRDS(paste0("C:/Users/CaughlinLab/Desktop/Landsat_eros/tfires.rds"))
+tsage <- readRDS(paste0("C:/Users/CaughlinLab/Desktop/Landsat_eros/tsage.rds"))
+tpxlcov <- readRDS(paste0("C:/Users/CaughlinLab/Desktop/Landsat_eros/tpxlcov.rds"))
 
-k=1
-fig()
-####################################################################
-
-############################################## dopar
+############################################## dopar 1
 library(foreach)
 library(doParallel)
 cl=makeCluster(20)
 registerDoParallel(cl)
-#modlist = 
-foreach(i = 1:100, .packages=c('raster', 'rstan')) %dopar% {
-  # alist <- dataprep(n = i, pol = dfspat, rast = sage, year = years, yroffset = offset, trsubset = .25,
-  #                predsubset = 1, threshold = TRUE, thresholdval = .1)
-  # saveRDS(alist, paste0(path, "models_stan_eros/datasets_models_eros/dat", i, ".rds"))
-  alist <- readRDS(paste0(path,"models_stan_eros/datasets_models_eros/dat",i,".rds"))
-  temp <- stan(file = paste0(path, "rdiff_discrete_landsat_non_spat_statespace.stan"),
-              data = alist, iter = 500, warmup = 450, chains = 3, seed = 125,
-              pars = c("Z", "r", "r_mu", "r_sigma", "k", "k_mu", "k_phi", "k_sigma", "eta",
-                       "y_pred", "y_pred01", "z_pred", "z_init", "gamma", "alpha", "alpha_pred", "sigma_alpha_pred"),
-              save_warmup = FALSE)
-  saveRDS(temp, paste0(path, "models_stan_eros/mod", i, ".rds"))
-  rm(t)
+
+foreach(i = 1:length(tsage), .packages=c('reshape2','brms','matrixcalc')) %dopar% {
+  # --- Gompertz Poisson
+  mat <- data.matrix(tsage[[i]][,c(tfires$FireYear[i]-1984):33])
+  xpr <- vec(mat[,-ncol(mat)])
+  dat <- data.frame(y = vec(mat[,-1]), 
+                    x = log(ifelse(xpr == 0, .2, xpr)),
+                    cl = as.factor(rep(tpxlcov[[i]]$cluster, ncol(mat)-1)))
+  
+  temp <- brm(y ~ 1 + x + (1|cl) + offset(x), family="poisson", data=dat, chains = 4, iter = 1000, warmup = 800)
+  
+  saveRDS(temp, paste0(path, "models_stan_eros/gomp_log_", i, ".rds"))
+  rm(temp)
 }
 stopCluster(cl)
 #####################################################
+
+############################################## dopar 2
+library(foreach)
+library(doParallel)
+cl=makeCluster(20)
+registerDoParallel(cl)
+
+foreach(i = 1:length(tsage), .packages=c('reshape2','brms','matrixcalc')) %dopar% {
+  # --- exact Gompertz solution
+  # u(t) = k*exp(const*exp(-alpha*t)), where const = log(N0/k)
+  mat <- tsage[[i]][,c(tfires$FireYear[i]-1984):33]
+  colnames(mat) <- 1:ncol(mat)
+  mat$n0 = as.numeric(ifelse(mat[,1] == 0, .2, mat[,1]))
+  mat$cl = as.factor(tpxlcov[[i]]$cluster)
+  dat <- melt(mat, id.vars = c("n0", "cl"))
+  names(dat) <- c("n0", "cl", "t", "cover")
+  dat$t <- as.numeric(dat$t)
+  dat$cover = ifelse(dat$cover==0, .2, dat$cover)
+  
+  gompnl <- bf(cover ~ k*exp(log(n0/k)*exp(-alpha*t)),
+               alpha ~ 1 + (1|cl), k ~ 1, nl = TRUE)
+  nlprior <- c(prior(normal(10, 5), nlpar = "k"),
+               prior(normal(0, 1), nlpar = "alpha"))
+  temp <- brm(formula = gompnl, data = dat, family = gaussian(),
+              prior = nlprior, 
+              control = list(adapt_delta = 0.9),
+              chains = 4, iter = 1000, warmup = 800)
+  
+  saveRDS(temp, paste0(path, "models_stan_eros/gomp_", i, ".rds"))
+  rm(temp)
+}
+stopCluster(cl)
+#####################################################
+
+############################################## dopar 3
+library(foreach)
+library(doParallel)
+cl=makeCluster(20)
+registerDoParallel(cl)
+
+foreach(i = 1:length(tsage), .packages=c('reshape2','brms','matrixcalc')) %dopar% {
+  # --- exact Gompertz solution
+  # u(t) = k*exp(const*exp(-alpha*t)), where const = log(N0/k)
+  mat <- tsage[[i]][,c(tfires$FireYear[i]-1984):33]
+  colnames(mat) <- 1:ncol(mat)
+  mat$n0 = as.numeric(ifelse(mat[,1] == 0,  0.01, mat[,1]))
+  mat$cl = as.factor(tpxlcov[[i]]$cluster)
+  dat <- melt(mat, id.vars = c("n0", "cl"))
+  names(dat) <- c("n0", "cl", "t", "cover")
+  dat$t <- as.numeric(dat$t)
+  dat$cover = ifelse(dat$cover==0, 0.01, dat$cover)
+  
+  lgnl <- bf(cover ~ k*n0*exp(r*t)/(k+n0*(exp(r*t)-1) ),
+             r ~ 1 +(1|cl), k ~ 1, nl = TRUE)
+  nlprior <- c(prior(normal(10, 5), nlpar = "k"),
+               prior(normal(0, 1), nlpar = "r"))
+  fit1 <- brm(formula = lgnl, data = dat, family = gaussian(),
+              prior = nlprior, 
+              control = list(adapt_delta = 0.9),
+              chains = 4, iter = 1000, warmup = 800)
+  
+  saveRDS(temp, paste0(path, "models_stan_eros/gomp_lg", i, ".rds"))
+  rm(temp)
+}
+stopCluster(cl)
+#####################################################
+
+
 # === explore the fit models
 modlist <- list()
 datlist <- list()
