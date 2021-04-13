@@ -1,10 +1,6 @@
-library(raster)
-library(sf)
-library(rgdal)
-library(foreach)
-library(doParallel)
-library(dplyr)
-library(spdplyr)
+pkgs <- c("raster", "sf", "rgdal", "foreach", "doParallel", "dplyr", "spdplyr")
+sapply(pkgs, require, character.only = T)
+
 ################################ This script collects env data and matches sites using Mahalanobis distance metric
 
 # --- import fire  polygons
