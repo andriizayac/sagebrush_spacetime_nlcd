@@ -36,15 +36,15 @@ ssize <- sapply(sagedf, nrow) # range of sample sizes
 
 maxdiff <- rep(NA, N)
 for(i in 1:N){
-  l <- as.numeric(apply(sagedf[[i]], 2, function(x){mean(x[1:20])}))
+  l <- as.numeric(apply(sagedf[[i]], 2, function(x){mean(x[1:25])}))
   maxdiff[i] <- min(diff(l))
 }
 
-diffins <- which(maxdiff < quantile(maxdiff, .5, na.rm = T))
-sizeins <- which(ssize < 500 & ssize > 200)
+diffins <- which(maxdiff < quantile(maxdiff, .33, na.rm = T))
+sizeins <- which(ssize > 200)
 
 
-subid <- sizeins[sizeins %in% diffins][1:12]
+subid <- sizeins[sizeins %in% diffins]
 # test set, manually picked
 
 par(mfrow = c(4,3), mar = c(1,2,1,1))
@@ -57,11 +57,12 @@ for(i in 1:12){
 # === add pre-disturbance covariates to cov df
 tfires <- fires[subid, ]
 tsage <- sagedf[subid]
+tdfEnv <- dfEnv[subid, ]
 tpxlcov <- covdf[subid]
 
 for(i in 1:length(subid)){
-  var1 <- apply(tsage[[i]][,1:(tfires$FireYer[i]-1986)], 1, mean)
-  var2 <- as.numeric(apply(tsage[[i]][,1:(tfires$FireYer[i]-1986)], 1, function(x){ mean(x)/sd(x) }))
+  var1 <- apply(tsage[[i]][,1:(tfires$FireYer[i]-1985)], 1, mean)
+  var2 <- as.numeric(apply(tsage[[i]][,1:(tfires$FireYer[i]-1985)], 1, function(x){ mean(x)/sd(x) }))
   tpxlcov[[i]]$prefire <- var1
   stabmean  <- mean(var2[is.finite(var2)], na.rm = T)
   tpxlcov[[i]]$stab <- ifelse(!is.finite(var2), stabmean, var2)
@@ -75,7 +76,8 @@ library(cluster)
 library(factoextra)
 
 # add cluster 
-for(i in 1:12){
+for(i in 1:length(subid)){
+  set.seed(123)
   # https://stackoverflow.com/questions/16274788/k-means-and-mahalanobis-distance 
   # cov(X) = R'R
   # y = XR^-1
@@ -91,6 +93,7 @@ for(i in 1:12){
 saveRDS(tfires, paste0(path, "tfires.rds"))
 saveRDS(tpxlcov, paste0(path, "tpxlcov.rds"))
 saveRDS(tsage, paste0(path, "tsage.rds"))
+saveRDS(tdfEnv, paste0(path, "tdfEnv_covars.rds"))
 
 
 
