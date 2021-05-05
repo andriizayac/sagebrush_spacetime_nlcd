@@ -40,7 +40,7 @@ for(i in 1:N){
   maxdiff[i] <- min(diff(l))
 }
 
-diffins <- which(maxdiff < quantile(maxdiff, .33, na.rm = T))
+diffins <- which(maxdiff < quantile(maxdiff, .5, na.rm = T))
 sizeins <- which(ssize > 200)
 
 
@@ -77,14 +77,14 @@ library(factoextra)
 
 # add cluster 
 for(i in 1:length(subid)){
-  set.seed(123)
+  # set.seed(123)
   # https://stackoverflow.com/questions/16274788/k-means-and-mahalanobis-distance 
   # cov(X) = R'R
   # y = XR^-1
   X <- as.matrix(tpxlcov[[i]])
   # Rescale the data
   C <- chol(var(X))
-  y <- X %*% solve(C)
+  y <- X %*% qr.solve(C)
   k2 <- kmeans(y, centers = 10)
   tpxlcov[[i]]$cluster <- as.numeric(k2$cluster)
 }
