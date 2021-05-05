@@ -4,15 +4,15 @@ sapply(pkgs, require, character.only = T)
 ################################ This script collects env data and matches sites using Mahalanobis distance metric
 
 # --- import fire  polygons
-path_fires <- "C:/Users/CaughlinLab/Desktop/Landsat_eros/nlcd_geospatial_RxFire/"
+path_fires <- "D:/Landsat_eros/nlcd_geospatial_RxFire/"
 
-fpols <- readOGR(paste0(path_fires, list.files(path_fires, pattern = "\\_blm.shp$"))) %>%
+fpols <- readOGR(paste0(path_fires, list.files(path_fires, pattern = "\\_Rx0.shp$"))) %>%
   filter(clipAre > 10)
 
 N <- nrow(fpols)
 
 # --- import rasters to crop --- THIS SECTION OF CODE DOES NOT NEED TO BE REPEATED
-path_rast <- "C:/Users/CaughlinLab/Desktop/Landsat_eros/nlcd_cov_raster_data/"
+path_rast <- "D:/Landsat_eros/nlcd_cov_raster_data/"
 rlist <- list.files(path_rast, pattern = "\\.tif$")
 
 # --- 1. Topographic data 
@@ -120,7 +120,7 @@ for(i in 1:N) {
 
 
 # ---------------------------------------------------------------- PROCEED FROM HERE
-path <- "C:/Users/CaughlinLab/Desktop/Landsat_eros/"
+path <- "D:/Landsat_eros/"
 ### === Import clipped layers
 # saveRDS(sagelist, paste0(path, "usgs_sagebrush/sagelist.rds"))
 # sagelist = readRDS(paste0(path,"usgs_sagebrush/sagelist.rds"))
@@ -140,7 +140,7 @@ for(i in 1:N){
 }
 # site level covariate data frame
 
-dfEnv = readRDS("dfEnv_covars.rds")
+# dfEnv = readRDS("dfEnv_covars.rds")
 
 # ========================= subset fires, sage rasters, covariates based on 'outs'
 n <- sum(ins)
@@ -160,7 +160,7 @@ saveRDS(dfEnv1, file = paste0(path, "dfEnv_covars.rds"))
 saveRDS(list(dem = pxldemcov,chili =  pxlchilicov, som = pxlsomcov), file = paste0(path, "pxlcovlist.rds"))
 
 
-# --- calculate pairwise Mahalanobis distance at Site Level
+# --- calculate pairwise Mahalanobis distance at Site Level - may not be necessary now
 library(StatMatch)
 
 mahdist <- mahalanobis.dist(as.matrix(dfEnv1))
