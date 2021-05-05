@@ -36,7 +36,7 @@ ssize <- sapply(sagedf, nrow) # range of sample sizes
 
 maxdiff <- rep(NA, N)
 for(i in 1:N){
-  l <- as.numeric(apply(sagedf[[i]], 2, function(x){mean(x[1:25])}))
+  l <- as.numeric(apply(sagedf[[i]], 2, function(x){mean(x[1:24])}))
   maxdiff[i] <- min(diff(l))
 }
 
