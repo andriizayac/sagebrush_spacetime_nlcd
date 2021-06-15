@@ -1,5 +1,5 @@
 # === libraries + paths
-pkgs <- c("brms", "matrixcalc", "reshape2", "nlme", "lme4")
+pkgs <- c("brms", "matrixcalc", "tidyverse", "nlme", "lme4")
 sapply(pkgs, require, character.only = T)
 
 path <- "~/Desktop/SSM_PDE/nlcd_subset/"
@@ -50,7 +50,6 @@ abline(v = df$FireYear[i] - 1984)
 
 # ====================================
 # see pxlmatching.R 
-# see pxlmatching.R 
 tfires <- readRDS(paste0("~/Desktop/SSM_PDE/nlcd_subset/tfires.rds"))
 tsage <- readRDS(paste0("~/Desktop/SSM_PDE/nlcd_subset/tsage.rds"))
 tpxlcov <- readRDS(paste0("~/Desktop/SSM_PDE/nlcd_subset/tpxlcov.rds"))
@@ -63,171 +62,215 @@ klist <- list()
 for(i in 1:length(tsage)) { klist[[i]] = tpxlcov[[i]]$prefire }
 kprior <- unlist(klist)
 fgamma <- fitdist( kprior[kprior > 0], "gamma" )
-plot(density(kprior), lwd = 2)
+plot(density(kprior[kprior > 0]), lwd = 2)
 curve(dgamma(x, shape = fgamma$estimate[1], rate = fgamma$estimate[2]), add = T, col ="brown", lwd = 3)
 
-# --- Poisson GLM on the log-log scale
-# temp <- brm(y ~ 1 + x  + offset(x), family = "poisson", data=dat, chains = 1, iter = 100)
-
-# === glmer predictions
-errvec.glm <- rep(NA, times = length(tsage))
+# === glmer 
 mlist.glm <- list()
+mlist0.glm <- list()
+coefs <- list()
 datlist.glm <- list()
+tvec <- rep(NA, length(kvec))
+
 for(i in 1:length(tsage)){
   print(i)
+  
+  # estimate growth and K parameters
   mat <- data.matrix(tsage[[i]][,c(tfires$FireYer[i]-1984):33])
-  xpr <- vec(mat[,-ncol(mat)])
-  dat <- data.frame(y = vec(mat[,-1]), 
-                    x = log(ifelse(xpr == 0, .25, xpr)),
+  xpr <- ifelse(vec(mat[,-ncol(mat)]) == 0, .2, vec(mat[,-ncol(mat)]))
+  ypr <- ifelse(vec(mat[,-1]) == 0, .2, vec(mat[,-1]))
+  dat <- data.frame(y = log(ypr/xpr),
+                    x = log(xpr),
                     cl = as.factor(rep(tpxlcov[[i]]$cluster, times = ncol(mat)-1)))
-  #temp <- glmer(y ~ (1|cl) + x + (x|cl) + offset(x), family = "poisson", data = dat)
-  temp <- brm(y ~ (1|cl) + (x|cl)  + offset(x), family = "poisson", data=dat, chains = 1, iter = 100)
-  pred <- exp(predict(temp))
-  errvec.glm[i] <- mean(abs(pred - dat$y))
+  temp <- lmer(y ~ (1|cl) + (0+x|cl), REML = FALSE, data = dat) #
   
-  mlist.glm[[i]] = temp
-  datlist.glm[[i]] = dat
-}
-plot(errvec.glm ~ kvec, pch = 19)
-
-# exact Logistic solution
-# K * N0 * exp(r * t) / (K + N0 * (exp(r * t) - 1))
-
-mat <- tsage[[i]][,c(tfires$FireYer[i]-1984):33]
-colnames(mat) <- 1:ncol(mat)
-mat$n0 = as.numeric(ifelse(mat[,1] == 0,  0.01, mat[,1]))
-mat$cl = as.factor(tpxlcov[[i]]$cluster)
-dat <- melt(mat, id.vars = c("n0", "cl"))
-names(dat) <- c("n0", "cl", "t", "cover")
-dat$t <- as.numeric(dat$t)
-
-lgnl <- bf(cover ~ u0*k/( u0 + (k - u0)*exp(-r*t) ),
-             r ~ 1|cl, k ~ 1|cl, u0 ~ 1, nl = TRUE)
-nlprior <- c(set_prior("gamma(4.085748, 0.2505014)", lb = 0, nlpar = "k"),
-             set_prior("gamma(3, 3)", lb = 0, nlpar = "r"),
-             set_prior("exponential(1)", lb = 0, nlpar = "u0"))
-fit1 <- brm(formula = lgnl, data = dat, family = gaussian(),
-            prior = nlprior, 
-            control = list(adapt_delta = 0.9),
-            chains = 1, iter = 200)
-stanfit <- fit1$fit
-
-fit2 <- brm(formula = lgnl, data = dat, family = gaussian(),
-            prior = nlprior, 
-            control = list(adapt_delta = 0.9),
-            chains = 1, iter = 200)
-plot( conditional_effects(fit1), points = T)
-
-
-errvec.lg <- rep(NA, times = length(tsage))
-mlist.lg = list()
-datlist.lg = list()
-for(i in 1:length(tsage)){
-  print(i)
+  # estimate initial population size based the first 5 years of data post-fire
   mat <- tsage[[i]][,c(tfires$FireYer[i]-1984):33]
-  colnames(mat) <- 1:ncol(mat)
-  mat$n0 <- mat[, 1]
-  mat$cl <- as.factor(tpxlcov[[i]]$cluster)
-  dat <- melt(mat, id.vars = c("n0", "cl"))
-  names(dat) <- c("n0", "cl", "t", "cover")
-  dat$t <- as.numeric(dat$t)
+  T = ncol(mat)
+  colnames(mat) <- 1:T-1
+  mat$cl = as.factor(tpxlcov[[i]]$cluster)
+  dat <- pivot_longer(mat, cols = c(1:T)) %>% 
+    rename(t = name, cover = value) %>% 
+    mutate(t = as.numeric(t), 
+           cover = ifelse(cover == 0, runif(1e6, 0,1), cover)) %>%
+    filter(t <= 5) %>% 
+    select(cl, t, cover)
+  temp_n0 <- glmer(cover ~ (1|cl) + (0+t|cl), family = Gamma(link = "log"), data = dat) # 
 
-  m1 <- nlme(cover ~ u0*k/( u0 + (k - u0)*exp(-r*t)),
-             data = dat, 
-             fixed = k + u0 + r ~ 1,
-             random =  r + k ~ 1,
-             groups = ~cl,
-             start = c(k = 20, u0 = 1, r = 1))
+  # store models
+  mlist.glm[[i]] = temp
+  mlist0.glm[[i]] = temp_n0
+  tvec[i] <- T
+  datlist.glm[[i]] <- mat
+  coefs[[i]] = data.frame(a = coef(temp)$cl[,2], b = coef(temp)$cl[,1], n0 = exp(coef(temp_n0)$cl[,2]))
+}
 
-  pred <- predict(m1)
-  errvec.lg[i] <- mean(abs(pred - dat$cover))
+sapply(coefs, function(x) { sum(x$n0 < 0) } ) # check for negative N0
+
+#  === Gomperz equation
+# K * exp(C * exp(-alpha*t)) 
+gomp <- function(a, b, n0, t) {
+  # vector-valued Gomperz model
+  # in: coefs from log-lin and N0-Gamma models and a vector of time steps
+  # out: matrix of values nrow = length(a), and ncol = length(t)
+  K <- exp(-a/b)
+  C <- log(n0/K)
+  u <- K * exp(C * exp( outer(b, t) ))
+  return(u)
+}
+
+# === in-sample predictions 
+pred.glm <- list()
+errvec.glm <- rep(NA, times = length(tsage))
+
+for(j in 1:length(tsage)) {
+  a <- coefs[[j]]$a
+  b <- coefs[[j]]$b
+  n0 <- coefs[[j]]$n0
+  t <- 1:tvec[j]-1
+  matpred <- gomp(a, b, n0, t)
   
-  mlist.lg[[i]] <- m1
-  datlist.lg[[i]] <- dat
-}
-plot(errvec.lg ~ kvec, pch = 19, col = rgb(.5,0,.5,1))
-
-plot(density(errvec.glm), xlim = c(.5, 5), col = "purple", lwd = 2)
-lines(density(errvec.lg), lwd = 2, col = "brown")
-
-# --- in-sample error estimates
-err.yr.glm <- matrix(NA, 12, 33)
-err.yr.lg <- matrix(NA, 12, 33)
-prob.yr.glm <- matrix(NA, 12, 33)
-prob.yr.lg <- matrix(NA, 12, 33)
-for(i in 1:length(tsage)) {
-  pred1 = exp(predict(mlist.glm[[i]]))
-  pred2 = predict(mlist.lg[[i]])
-  dat1 = datlist.glm[[i]]
-  dat2 = datlist.lg[[i]]
-  names(pred1) = dat2$t[dat2$t > 1]
-  dat1$t = dat2$t[dat2$t > 1]
-  for(t in 2:33) {
-    # mean absolute error
-    err.yr.glm[i,t] = mean(abs(pred1[dat1$t == t] - dat1$y[dat1$t == t]))
-    err.yr.lg[i,t-1] = mean(abs(pred2[dat2$t == t-1] - dat2$cover[dat2$t == t-1]))
-    # probability of over-predicting
-    # prob.yr.glm[i,t] = sum(pred1[dat1$t == t] > dat1$y[dat1$t == t]) / length(dat1$y[dat1$t == t])
-    # prob.yr.lg[i,t-1] <- sum(pred2[dat2$t == t-1] > dat2$cover[dat2$t == t-1]) / length(dat2$cover[dat2$t == t-1])
-    # average residuals by year
-    prob.yr.glm[i,t] <- mean(pred1[dat1$t == t] - dat1$y[dat1$t == t]) 
-    prob.yr.lg[i,t-1] <- mean(pred2[dat2$t == t-1] - dat2$cover[dat2$t == t-1])
-  }
+  pred.glm[[j]] <- matpred
+  a <- datlist.glm[[j]] %>% #select(-cl) #%>%
+    group_by(cl) %>% 
+    summarise_all(mean)
+  errvec.glm[j] <- mean( abs(matpred - as.matrix(a[,-1])) )
 }
 
-par(mfrow = c(2, 2))
-boxplot(err.yr.glm[ ,1:20], main = "GLM", ylab = "MAE (% cover)", xlab = "Time since fire (years)")
-boxplot(err.yr.lg[ ,1:20], main = "Logistic growth", ylab = "MAE (% cover)", xlab = "Time since fire (years)")
+errvec.glm[is.infinite(errvec.glm)] <- NA
+plot(errvec.glm~kvec, xlab = "Pre-fire cover", ylab = "MAE", pch = 19)
 
-boxplot(prob.yr.glm[ ,1:20], main = "GLM", ylab = "Residuals [y_hat - y]", xlab = "Time since fire (years)")
-abline(h = .5, col = "red", lty = "dashed")
-boxplot(prob.yr.lg[ ,1:20], main = "Logistic growth", ylab = "Residuals [ y_hat - y ]", xlab = "Time since fire (years)")
-abline(h = .5, col = "red", lty = "dashed")
-
-# --- out-of-sample errors; match sites at the fire level
+# === out-of-sample errors; match sites at the fire level and pixel-to-cluster 
 tdfEnv <- readRDS(paste0("~/Desktop/SSM_PDE/nlcd_subset/tdfEnv_covars.rds"))
+tdfEnv$sm03mean <- ifelse(is.na(tdfEnv$sm03mean), mean(tdfEnv$sm03mean, na.rm = T), tdfEnv$sm03mean)
+tdfEnv$sm03sd <-ifelse(is.na(tdfEnv$sm03sd), mean(tdfEnv$sm03sd, na.rm = T), tdfEnv$sm03sd)
+tdfEnv$smAnnAnomsd <-ifelse(is.na(tdfEnv$smAnnAnomsd), mean(tdfEnv$smAnnAnomsd, na.rm = T), tdfEnv$smAnnAnomsd)
 
-tdfEnv$u0 <- sapply(mlist.lg, function(x) {x$coefficients$fixed['u0']} )
-  
-mah <- StatMatch::mahalanobis.dist(tdfEnv)
+tdfEnv$u0 <- sapply(coefs, function(x) {mean(x$n0)} )
+
+# --- site-to-site match
+mah <- StatMatch::mahalanobis.dist(tdfEnv[,])
 diag(mah) <- NA
 match <- apply(mah, 1, which.min)
 mahdist <- apply(mah, 1, min, na.rm = T)
 
-errvec.glm.out <- rep(NA, length(tsage))
-errvec.lg.out <- rep(NA, length(tsage))
-errvec.rand.out <- rep(NA, length(tsage))
-for(i in 1:length(tsage)){
-  # glmer out-of-sample predictions
-  pred1 <- exp(predict(mlist.glm[[ match[i] ]], newdata = data.frame(x = datlist.glm[[i]]$x, cl = datlist.glm[[i]]$cl)))
-  errvec.glm.out[i] <- mean(abs(datlist.glm[[i]]$y - pred1))
-  # # non-linear out-of-sample predictions
-  # pred2 <- predict(mlist.lg[[ match[i] ]], newdata = data.frame(t = datlist.lg[[i]]$t, cl = datlist.lg[[i]]$cl))
-  # errvec.lg.out[i] <- mean(abs(datlist.lg[[i]]$cover - pred2))
-  # random matching
-  rid <- sample(1:12, 1)
-  pred3 <- predict(mlist.lg[[rid]], newdata = data.frame(t = datlist.lg[[i]]$t, cl = datlist.lg[[i]]$cl))
-  errvec.rand.out[i] <- mean(abs(datlist.lg[[i]]$cover - pred3))
+# --- pixel-to-cluster match
+pxl.dist <- function(dat, dat.m) {
+  # finds a match for each focal pixel to a cluster in the reference site
+  # - replaces cluster value for matched cluster
+  # dat: focal pixel-level covariates
+  # dat.m: reference pixel-level covariates
+  df <- dat.m %>%
+    group_by(cluster) %>%
+    summarize_all(mean) %>% select(-cluster)
+  mah.p <- StatMatch::mahalanobis.dist(dat[,-6], df)
+  
+  dat$cluster <- apply(mah.p, 1, which.min)
+  return(dat)
 }
 
+errvec.glm.out <- rep(NA, length(tsage))
+errvec.glm.out.rand <- rep(NA, length(tsage))
+
+for(i in 1:length(tsage)){
+  # glmer out-of-sample Mahalanobis nearest match
+  j <- match[i]
+  a <- coefs[[j]]$a
+  b <- coefs[[j]]$b
+  n0 <- coefs[[j]]$n0
+  t <- 1:tvec[i]-1
+  
+  matpred <- as.data.frame(gomp(a, b, n0, t)) %>% mutate(cl = row_number())
+  pred.m <- pxl.dist(tpxlcov[[i]], tpxlcov[[j]]) %>%
+    select(cluster) %>% 
+    left_join(matpred, by = c("cluster" = "cl")) %>%
+    select(-cluster)
+  
+  # glmer out-of-sample, random match
+  l <- sample(1:length(tsage), 1, replace = T)
+  a <- coefs[[l]]$a
+  b <- coefs[[l]]$b
+  n0 <- coefs[[l]]$n0
+  t <- 1:tvec[i]-1
+  
+  matpred.r <- as.data.frame(gomp(a, b, n0, t)) %>% 
+    slice(sample(1:n())) %>%
+    mutate(cl = row_number())
+  pred.r <- tpxlcov[[i]] %>%
+    select(cluster) %>% 
+    left_join(matpred.r, by = c("cluster" = "cl")) %>%
+    select(-cluster)
+  
+  obs <- datlist.glm[[i]] %>% select(-cl)
+  
+  errvec.glm.out[i] <- mean( as.matrix( abs(pred.m - obs)) )
+  errvec.glm.out.rand[i] <- mean( as.matrix( abs(pred.r - obs)) )
+}
+errvec.glm.out[!is.finite(errvec.glm.out)] <- NA
+errvec.glm.out.rand[!is.finite(errvec.glm.out.rand)] <- NA
+
 plot(errvec.glm.out ~ mahdist, col = "purple", pch = 19, ylim = c(0, 12))
-points(errvec.lg.out ~ mahdist, col = "green", pch = 19)
-points(errvec.rand.out ~ mahdist, col = "magenta", pch = 19)
-
-par(mfrow = c(2, 2))
-boxplot(err.yr.glm[ ,1:20], main = "GLM", ylab = "MAE (% cover)", xlab = "Time since fire (years)")
-boxplot(err.yr.lg[ ,1:20], main = "Logistic growth", ylab = "MAE (% cover)", xlab = "Time since fire (years)")
-
-boxplot(prob.yr.glm[ ,1:20], main = "GLM", ylab = "Pr[ y_hat > y ]", xlab = "Time since fire (years)")
-abline(h = .5, col = "red", lty = "dashed")
-boxplot(prob.yr.lg[ ,1:20], main = "Logistic growth", ylab = "Pr[ y_hat > y ]", xlab = "Time since fire (years)")
-abline(h = .5, col = "red", lty = "dashed")
+points(errvec.glm.out.rand ~ mahdist, col = "gold", pch = 19, ylim = c(0, 12))
 
 
+plot(density(errvec.glm.out, na.rm = T), col = rgb(1,.5,1,1), xlab = "MAE")
+lines(density(errvec.glm.out.rand, na.rm = T),col = rgb(0,.5,.1,1))
+
+cat("In-sample MAE (%): ", mean(errvec.glm))
+cat("Out-of-sample MAE (%): ", mean(errvec.glm.out))
+cat("NULL out-of-sample MAE (%): ", mean(errvec.glm.out.rand))
+
+##################################
+# --- multiple matches averaged
+mah <- StatMatch::mahalanobis.dist(tdfEnv[,])
+diag(mah) <- NA
+match <- apply(mah, 1, function(x) { which(x < min(x, na.rm = T)+1) } )
+
+errvec.glm.out <- rep(NA, length(tsage))
+errvec.glm.out.rand <- rep(NA, length(tsage))
+
+for(i in 1:length(tsage)){
+  # glmer out-of-sample Mahalanobis nearest match
+  j <- match[[i]]
+  amean <- mean( sapply(coefs[j], function(x) { x$a }) )
+  bmean <- mean( sapply(coefs[j], function(x) { x$b }) )
+  n0mean <- mean( sapply(coefs[j], function(x) { x$n0 }) )
+  matpred <- matrix(NA, 1, tvec[i])
+  for(k in 1:tvec[i]) { 
+    matpred[,k] <- gomp(amean, bmean, n0mean, k-1)
+  }
+  # glmer out-of-sample, random match
+  l <- sample(1:length(tsage), 1, replace = T)
+  amean <- mean( sapply(coefs[l], function(x) { x$a }) )
+  bmean <- mean( sapply(coefs[l], function(x) { x$b }) )
+  n0mean <- mean( sapply(coefs[l], function(x) { x$n0 }) )
+  matpred.rand <- matrix(NA, 1, tvec[i])
+  for(k in 1:tvec[i]) { 
+    matpred.rand[,k] <- gomp(amean, bmean, n0mean, k-1)
+  }
+  
+  a <- datlist.glm[[i]] %>% select(-cl) %>%
+    # group_by(cl) %>% 
+    summarise_all(mean) 
+  
+  errvec.glm.out[i] <- mean(abs(matpred - as.matrix(a[,])))
+  errvec.glm.out.rand[i] <- mean(abs(matpred.rand - as.matrix(a[,])))
+}
+errvec.glm.out[!is.finite(errvec.glm.out)] <- NA
+errvec.glm.out.rand[!is.finite(errvec.glm.out.rand)] <- NA
+
+plot(errvec.glm.out ~ mahdist, col = "purple", pch = 19, ylim = c(0, 12))
+points(errvec.glm.out.rand ~ mahdist, col = "gold", pch = 19, ylim = c(0, 12))
 
 
+plot(density(errvec.glm.out, na.rm = T), col = rgb(1,.5,1,1), xlab = "MAE")
+lines(density(errvec.glm.out.rand, na.rm = T),col = rgb(0,.5,.1,1))
 
-################################## 
+cat("In-sample MAE (%): ", mean(errvec.glm))
+cat("Out-of-sample MAE (%): ", mean(errvec.glm.out))
+cat("NULL out-of-sample MAE (%): ", mean(errvec.glm.out.rand))
+
+################################################################################ 
 res1 <- readRDS("~/Downloads/res1.rds")
 ggplot(res1 , aes(y = value, x = as.factor(idvar))) + # geom_pointrange(aes(ymin = lower, ymax = upper), size = .1) +
   geom_boxplot() + 
@@ -267,16 +310,12 @@ leaflet() %>%
   addScaleBar(position = "bottomright")
 
 
-#### Export figures
-# ----
-library(export)
-pathfig <- "~/Downloads/"
-graph2eps(file = paste0(pathfig, "figh2.eps"), height = 6, width = 6)
-
-library(htmlwidgets)
-saveWidget(m, file = paste0(pathfig, "figmap.html"))
-library(mapview)
-mapshot(m, file = paste0(pathfig, "figmap1.pdf"))
+# === Export figures
+# --- export leaflet/html visuals 
+# library(htmlwidgets)
+# saveWidget(m, file = paste0(pathfig, "figmap.html"))
+# library(mapview)
+# mapshot(m, file = paste0(pathfig, "figmap1.pdf"))
 
 dat1 <- readRDS("~/Downloads/dat1.rds")
 dat9 <- readRDS("~/Downloads/dat9.rds")
