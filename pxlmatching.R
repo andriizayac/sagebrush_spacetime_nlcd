@@ -3,7 +3,7 @@ pkgs <- c("cluster", "raster", "rgdal", "spdplyr")
 sapply(pkgs, require, character.only = T)
 
 years <- c(1985:2018)
-path <- "~/Desktop/SSM_PDE/nlcd_subset/"
+path <- "D:/Landsat_eros/"
 
 # === import data
 fires <- readRDS(paste0(path, "fpolygons.rds"))
@@ -36,11 +36,11 @@ ssize <- sapply(sagedf, nrow) # range of sample sizes
 
 maxdiff <- rep(NA, N)
 for(i in 1:N){
-  l <- as.numeric(apply(sagedf[[i]], 2, function(x){mean(x[1:25])}))
+  l <- as.numeric(apply(sagedf[[i]], 2, function(x) { mean(x[4:24]) } ))
   maxdiff[i] <- min(diff(l))
 }
 
-diffins <- which(maxdiff < quantile(maxdiff, .33, na.rm = T))
+diffins <- which(sapply(maxdiff, function(x) { -x > 1 }))
 sizeins <- which(ssize > 200)
 
 
@@ -55,19 +55,20 @@ for(i in 1:12){
 }
 
 # === add pre-disturbance covariates to cov df
+# assigns average stability to the pixels with no variation.
+
 tfires <- fires[subid, ]
 tsage <- sagedf[subid]
 tdfEnv <- dfEnv[subid, ]
 tpxlcov <- covdf[subid]
 
 for(i in 1:length(subid)){
-  var1 <- apply(tsage[[i]][,1:(tfires$FireYer[i]-1985)], 1, mean)
-  var2 <- as.numeric(apply(tsage[[i]][,1:(tfires$FireYer[i]-1985)], 1, function(x){ mean(x)/sd(x) }))
+  var1 <- apply(tsage[[i]][, 1:(tfires$FireYer[i]-1985)], 1, mean)
+  var2 <- as.numeric(apply(tsage[[i]][, 1:(tfires$FireYer[i]-1985)], 1, function(x) { mean(x)/sd(x) } ))
   tpxlcov[[i]]$prefire <- var1
   stabmean  <- mean(var2[is.finite(var2)], na.rm = T)
   tpxlcov[[i]]$stab <- ifelse(!is.finite(var2), stabmean, var2)
 }
-# assigns average stability to the pixles with no variation.
 
 # === import/calculate pixel-level covariates
 
@@ -77,15 +78,15 @@ library(factoextra)
 
 # add cluster 
 for(i in 1:length(subid)){
-  set.seed(123)
+  set.seed(1)
   # https://stackoverflow.com/questions/16274788/k-means-and-mahalanobis-distance 
   # cov(X) = R'R
   # y = XR^-1
   X <- as.matrix(tpxlcov[[i]])
   # Rescale the data
   C <- chol(var(X))
-  y <- X %*% solve(C)
-  k2 <- kmeans(y, centers = 10)
+  y <- X %*% qr.solve(C)
+  k2 <- kmeans(y, centers = 7)
   tpxlcov[[i]]$cluster <- as.numeric(k2$cluster)
 }
 
