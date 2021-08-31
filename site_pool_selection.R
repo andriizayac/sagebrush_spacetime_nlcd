@@ -2,7 +2,7 @@
 pkgs <- c("raster", "sf", "rgdal", "cluster", "spdplyr", "rgeos", "snow")
 sapply(pkgs, require, character.only = T)
 
-path <- "D://Landsat_eros/nlcd_geospatial_RxFire/"
+path <- "D:/Landsat_eros/nlcd_geospatial_RxFire/"
 prjcrs <- CRS("+init=epsg:5070")
 
 # === load base layers
@@ -78,8 +78,8 @@ fires.rx0 <- sub
 fires.rx0@proj4string <- prjcrs
 fires.rx0$clipArea <- gArea(fires.rx0, byid = TRUE) / 10000
 
-writeOGR(fires.rx0, paste0(path, "GBLCC_1987_2007_ct_1_Rx0.shp"), "GBLCC_1987_2007_ct_1_Rx0", driver = "ESRI Shapefile", overwrite_layer = TRUE)
-
+# writeOGR(fires.rx0, paste0(path, "GBLCC_1987_2007_ct_1_Rx0.shp"), "GBLCC_1987_2007_ct_1_Rx0", driver = "ESRI Shapefile", overwrite_layer = TRUE)
+# sub <- readOGR(paste0(path, "GBLCC_1987_2007_ct_1_Rx0.shp"))
 # blm lands
 blmlist <- list()
 for(i in 1:nrow(blmlcc)) { blmlist[[i]] = buffer(blmlcc[i, ], 0) }
