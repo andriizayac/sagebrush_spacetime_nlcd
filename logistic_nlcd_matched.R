@@ -53,6 +53,7 @@ abline(v = df$FireYear[i] - 1984)
 tfires <- readRDS(paste0("~/Desktop/SSM_PDE/nlcd_subset/tfires.rds"))
 tsage <- readRDS(paste0("~/Desktop/SSM_PDE/nlcd_subset/tsage.rds"))
 tpxlcov <- readRDS(paste0("~/Desktop/SSM_PDE/nlcd_subset/tpxlcov.rds"))
+tdfEnv <- readRDS(paste0("~/Desktop/SSM_PDE/nlcd_subset/tdfEnv_covars.rds"))
 
 kvec <- sapply(tpxlcov, function(x){ mean(x[['prefire']])})
 
@@ -141,7 +142,6 @@ errvec.glm[is.infinite(errvec.glm)] <- NA
 plot(errvec.glm~kvec, xlab = "Pre-fire cover", ylab = "MAE", pch = 19)
 
 # === out-of-sample errors; match sites at the fire level and pixel-to-cluster 
-tdfEnv <- readRDS(paste0("~/Desktop/SSM_PDE/nlcd_subset/tdfEnv_covars.rds"))
 tdfEnv$sm03mean <- ifelse(is.na(tdfEnv$sm03mean), mean(tdfEnv$sm03mean, na.rm = T), tdfEnv$sm03mean)
 tdfEnv$sm03sd <-ifelse(is.na(tdfEnv$sm03sd), mean(tdfEnv$sm03sd, na.rm = T), tdfEnv$sm03sd)
 tdfEnv$smAnnAnomsd <-ifelse(is.na(tdfEnv$smAnnAnomsd), mean(tdfEnv$smAnnAnomsd, na.rm = T), tdfEnv$smAnnAnomsd)

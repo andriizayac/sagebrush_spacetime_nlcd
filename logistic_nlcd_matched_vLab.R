@@ -2,16 +2,14 @@
 pkgs <- c("brms", "matrixcalc", "tidyverse", "lme4", "raster", "rgdal", "spdplyr", "doParallel", "parallel", "snow")
 sapply(pkgs, require, character.only = T)
 
-path <- "D:/Landsat_eros/"
 years <- c(1985:2018)
 
 # ====================================
 # see pxlmatching.R 
-# see pxlmatching.R 
-tfires <- readRDS(paste0(path,"tfires.rds"))
-tsage <- readRDS(paste0(path, "tsage.rds"))
-tpxlcov <- readRDS(paste0(path, "tpxlcov.rds"))
-tdfEnv <- readRDS(paste0(path, "tdfEnv_covars.rds"))
+tfires <- readRDS("data/tfires.rds")
+tsage <- readRDS("data/tsage.rds")
+tpxlcov <- readRDS("data/tpxlcov.rds")
+tdfEnv <- readRDS("data/tdfEnv_covars.rds")
 
 kvec <- sapply(tpxlcov, function(x){ mean(x[['prefire']]) })
 

@@ -3,14 +3,13 @@ pkgs <- c("cluster", "raster", "rgdal", "spdplyr")
 sapply(pkgs, require, character.only = T)
 
 years <- c(1985:2018)
-path <- "D:/Landsat_eros/"
 
 # === import data
-fires <- readRDS(paste0(path, "fpolygons.rds"))
+fires <- readRDS("data/fpolygons.rds")
 fires$FireYer <- as.numeric(fires$FireYer)
-sage <- readRDS(paste0(path,"sagelist.rds"))
-dfEnv <- readRDS(paste0(path,"dfEnv_covars.rds"))
-pxldfEnv <- readRDS(paste0(path,"pxlcovlist.rds"))
+sage <- readRDS("data/sagelist.rds")
+dfEnv <- readRDS("data/dfEnv_covars.rds")
+pxldfEnv <- readRDS("data/pxlcovlist.rds")
 
 N <- nrow(fires)
 
@@ -46,13 +45,13 @@ sizeins <- which(ssize > 200)
 
 subid <- sizeins[sizeins %in% diffins]
 # test set, manually picked
-
-par(mfrow = c(4,3), mar = c(1,2,1,1))
-for(i in 1:12){
-  j = subid[i]
-  matplot(t(sagedf[[j]]), type = "l", col = rgb(.5, 0, .5, .05), main = j)
-  abline(v = fires$FireYer[j]-1984, lwd = 2)
-}
+# visualize
+# par(mfrow = c(4,3), mar = c(1,2,1,1))
+# for(i in 1:12){
+#   j = subid[i]
+#   matplot(t(sagedf[[j]]), type = "l", col = rgb(.5, 0, .5, .05), main = j)
+#   abline(v = fires$FireYer[j]-1984, lwd = 2)
+# }
 
 # === add pre-disturbance covariates to cov df
 # assigns average stability to the pixels with no variation.
@@ -86,15 +85,15 @@ for(i in 1:length(subid)){
   # Rescale the data
   C <- chol(var(X))
   y <- X %*% qr.solve(C)
-  k2 <- kmeans(y, centers = 7)
-  tpxlcov[[i]]$cluster <- as.numeric(k2$cluster)
+  k2 <- kmeans(y, centers = 15)
+  tpxlcov[[i]]$cluster15 <- as.numeric(k2$cluster)
 }
 
 # export data
-saveRDS(tfires, paste0(path, "tfires.rds"))
-saveRDS(tpxlcov, paste0(path, "tpxlcov.rds"))
-saveRDS(tsage, paste0(path, "tsage.rds"))
-saveRDS(tdfEnv, paste0(path, "tdfEnv_covars.rds"))
+saveRDS(tfires, "data/tfires.rds")
+saveRDS(tpxlcov, "data/tpxlcov.rds")
+saveRDS(tsage, "data/tsage.rds")
+saveRDS(tdfEnv, "data/tdfEnv_covars.rds")
 
 
 
