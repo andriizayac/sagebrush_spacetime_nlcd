@@ -61,7 +61,7 @@ tsage <- sagedf[subid]
 tdfEnv <- dfEnv[subid, ]
 tpxlcov <- covdf[subid]
 
-for(i in 1:length(subid)){
+for(i in 1:length(tpxlcov)){
   var1 <- apply(tsage[[i]][, 1:(tfires$FireYer[i]-1985)], 1, mean)
   var2 <- as.numeric(apply(tsage[[i]][, 1:(tfires$FireYer[i]-1985)], 1, function(x) { mean(x)/sd(x) } ))
   tpxlcov[[i]]$prefire <- var1
@@ -76,12 +76,12 @@ library(cluster)
 library(factoextra)
 
 # add cluster 
-for(i in 1:length(subid)){
+for(i in 1:length(tpxlcov)){
   set.seed(1)
   # https://stackoverflow.com/questions/16274788/k-means-and-mahalanobis-distance 
   # cov(X) = R'R
   # y = XR^-1
-  X <- as.matrix(tpxlcov[[i]])
+  X <- as.matrix(tpxlcov[[i]][,1:5])
   # Rescale the data
   C <- chol(var(X))
   y <- X %*% qr.solve(C)
