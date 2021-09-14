@@ -1,3 +1,5 @@
+
+# === Data extracting functions
 glm.dat <- function(tsage, tfires, tpxlcov, i=NULL, clN = NULL) {
   # this function generates a data input for log-log gompertz Poisson or Gaussian model
   # input: sage cover rasters, fire dataset, pixel-level covaraites, polygons index, number of clusters to be used
@@ -22,5 +24,33 @@ glm.dat.init <- function(tsage, tfires, tpxlcov, i=NULL, clN = NULL){
     mutate(t = as.numeric(t), 
            cover = ifelse(cover == 0, runif(1e6, 0,1), cover)) %>%
     filter(t <= 5)
+  return(dat)
+}
+
+# === Gomperz equation
+# K * exp(C * exp(-alpha*t)) 
+gomp <- function(a, b, n0, t) {
+  # vector-valued Gomperz model
+  # in: coefs from log-lin and N0-Gamma models and a vector of time steps
+  # out: matrix of values nrow = length(a), and ncol = length(t)
+  K <- exp(-a/b)
+  C <- log(n0/K)
+  u <- K * exp(C * exp( outer(b, t) ))
+  return(u)
+}
+
+# === calculate pixel Mahalanobis distance
+pxl.dist <- function(dat, dat.m, k) {
+  # finds a match for each focal pixel to a cluster in the reference site
+  # - replaces cluster value for matched cluster
+  # dat: focal pixel-level covariates
+  # dat.m: reference pixel-level covariates
+  clusterv <- paste0("cluster", k) 
+  df <- dat.m %>%
+    group_by_at(clusterv) %>%
+    summarize_all(mean) %>% dplyr::select(-starts_with("cluster"))
+  mah.p <- StatMatch::mahalanobis.dist(dat[, 1:5], df)
+  
+  dat$cluster <- apply(mah.p, 1, which.min)
   return(dat)
 }
