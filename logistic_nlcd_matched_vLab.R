@@ -13,11 +13,11 @@ tdfEnv <- readRDS("data/tdfEnv_covars.rds")
 
 kvec <- sapply(tpxlcov, function(x){ mean(x[['prefire']]) })
 
-f <- function(x) {
-  matplot(t(x), type = "l", col = rgb(.5,0,.5,.25), main = i);
-  i <<- i+1
-}
-f(tsage[[i]])
+# f <- function(x) {
+#   matplot(t(x), type = "l", col = rgb(.5,0,.5,.25), main = i);
+#   i <<- i+1
+# }
+# f(tsage[[i]])
 # --- parametrize k prior
 # remotes::install_github("aursiber/fitdistrplus")
 library(fitdistrplus)
@@ -25,12 +25,12 @@ klist <- list()
 for(i in 1:length(tsage)) { klist[[i]] = tpxlcov[[i]]$prefire }
 kprior <- unlist(klist)
 fgamma <- fitdist( kprior[kprior > 0], "gamma" )
-plot(density(kprior), lwd = 2)
-curve(dgamma(x, shape = fgamma$estimate[1], rate = fgamma$estimate[2]), add = T, col ="brown", lwd = 3)
+# plot(density(kprior), lwd = 2)
+# curve(dgamma(x, shape = fgamma$estimate[1], rate = fgamma$estimate[2]), add = T, col ="brown", lwd = 3)
 
 # --- Poisson GLM on the log-log scale
 # generate sample model for compilation
-glm.dat <- function(tsage, tfires, tpxlcov, i=NULL) {
+glm.dat <- function(tsage, tfires, tpxlcov, i=NULL, clN = NULL) {
   # this function generates a data input for log-log gompertz Poisson model
   # output: response - sage % for t = 2,3,..T
   #   predictor - negative sage %, encoding 0 -> .25, for t = 1,2,...T-1
@@ -39,7 +39,7 @@ glm.dat <- function(tsage, tfires, tpxlcov, i=NULL) {
   xpr <- vec(mat[,-ncol(mat)])
   dat <- data.frame(y = vec(mat[,-1]), 
                   x = -log(ifelse(xpr == 0, .25, xpr)),
-                  cl = as.factor(rep(tpxlcov[[i]]$cluster, times = ncol(mat)-1)),
+                  cl = as.factor(rep(tpxlcov[[i]][,paste0("cluster", clN)], times = ncol(mat)-1)),
                   t = sort( rep(2:ncol(mat), nrow(mat)) ) 
                   )
 }
@@ -56,6 +56,7 @@ plot( conditional_effects(temp, method = "predict"), points = F)
 pred <- predict(temp)
 plot(dat$y ~ (-1*dat$x))
 points(pred[,1] ~ -dat$x, pch = 19, col = rgb(0,0,0,.1), cex = .2)
+
 # === glmer predictions
 cl <- makeCluster(8)
 registerDoParallel(cl)
@@ -86,32 +87,6 @@ predlist <- foreach(i = 1:length(modlist), .packages = c('brms'), .export = c("m
 stopCluster(cl)
 
 # === lmer models and predictions ####
-glm.dat <- function(tsage, tfires, tpxlcov, i=NULL) {
-  # this function generates a data input for log-log gompertz Poisson model
-  # output: response - sage % for t = 2,3,..T
-  #   predictor - negative sage %, encoding 0 -> .25, for t = 1,2,...T-1
-  #   group - cl - pixel-level classes for random effect
-  mat <- data.matrix(tsage[[i]][,c(tfires$FireYer[i]-1984):33])
-  xpr <- ifelse(vec(mat[,-ncol(mat)]) == 0, .2, vec(mat[,-ncol(mat)]))
-  ypr <- ifelse(vec(mat[,-1]) == 0, .2, vec(mat[,-1]))
-  dat <- data.frame(y = log(ypr/xpr),
-                    x = log(xpr),
-                    cl = as.factor(rep(tpxlcov[[i]]$cluster, times = ncol(mat)-1)))
-  return(dat)
-}
-glm.dat.init <- function(tsage, tfires, tpxlcov, i=NULL){
-  mat <- tsage[[i]][,c(tfires$FireYer[i]-1984):33]
-  T = ncol(mat)
-  colnames(mat) <- 1:T-1
-  mat$cl = as.factor(tpxlcov[[i]]$cluster)
-  dat <- pivot_longer(mat, cols = c(1:T)) %>%
-    rename(t = name, cover = value) %>% 
-    mutate(t = as.numeric(t), 
-         cover = ifelse(cover == 0, runif(1e6, 0,1), cover)) %>%
-    filter(t <= 5)
-  return(dat)
-}
-
 # === glmer 
 mlist.glm <- list()
 mlist0.glm <- list()
@@ -119,15 +94,15 @@ coefs <- list()
 datlist.glm <- list()
 tvec <- rep(NA, length(kvec))
 
-for(i in 1:length(tsage)){ #
+for(i in 1:3){ #length(tsage)
   print(i)
   
   # estimate growth and K parameters
-  dat <- glm.dat(tsage, tfires, tpxlcov, i)
-  temp <- lmer(y ~ (1|cl) + (0+x|cl), REML = FALSE, data = dat) #
+  dat <- glm.dat(tsage, tfires, tpxlcov, i, 3)
+  temp <- lmer(y ~ (1|cl) + (0+x|cl), REML = TRUE, data = dat) #
   
   # estimate initial population size based the first 5 years of data post-fire
-  dat.init <- glm.dat.init(tsage, tfires, tpxlcov, i)
+  dat.init <- glm.dat.init(tsage, tfires, tpxlcov, i, 3)
   temp_n0 <- glmer(cover ~ (1|cl) + (0+t|cl), family = Gamma(link = "log"), data = dat.init) # 
   
   # store models
