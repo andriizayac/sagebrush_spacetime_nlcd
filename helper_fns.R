@@ -46,11 +46,25 @@ pxl.dist <- function(dat, dat.m, k) {
   # dat: focal pixel-level covariates
   # dat.m: reference pixel-level covariates
   clusterv <- paste0("cluster", k) 
-  df <- dat.m %>%
-    group_by_at(clusterv) %>%
-    summarize_all(mean) %>% dplyr::select(-starts_with("cluster"))
+  df <- dat.m %>% dplyr::select(-starts_with("cluster"))
+    # group_by_at(clusterv) %>%
+    # summarize_all(mean) %>% dplyr::select(-starts_with("cluster"))
+    ind <- 1:nrow(df)
+    if(nrow(df) > 10000) {
+      ind <- sample(ind, 10000)
+      df <- df[ind,]
+    }
   mah.p <- StatMatch::mahalanobis.dist(dat[, 1:5], df)
   
-  dat$cluster <- apply(mah.p, 1, which.min)
-  return(dat)
+  pdist <- apply(mah.p, 1, function(x) {
+    dat.m[,clusterv][which(x <= min(x) + sd(x) )]
+    } )
+  
+  weights <- sapply(pdist, function(x) table(x)/length(x))
+  clusters <- sapply(weights, function(x) as.numeric(names(x)) )
+  
+  # dat$cluster <- dat.m[ind, clusterv][ apply(mah.p, 1, which.min) ]
+  return( list(clusters = clusters, weights = weights) )
 }
+
+
