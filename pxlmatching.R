@@ -60,6 +60,12 @@ tfires <- fires[subid, ]
 tsage <- sagedf[subid]
 tdfEnv <- dfEnv[subid, ]
 tpxlcov <- covdf[subid]
+# remove NORTH BLUE MOUNTAIN fire as there is no variation 
+outid <- which(tfires$FireNam == "NORTH BLUE MOUNTAIN")
+tfires <- tfires[-outid, ]
+tsage <- tsage[-outid]
+tdfEnv <- tdfEnv[-outid, ]
+tpxlcov <- tpxlcov[-outid]
 
 for(i in 1:length(tpxlcov)){
   var1 <- apply(tsage[[i]][, 1:(tfires$FireYer[i]-1985)], 1, mean)
@@ -76,17 +82,19 @@ library(cluster)
 library(factoextra)
 
 # add cluster 
+for(M in 3:15) {
 for(i in 1:length(tpxlcov)){
-  set.seed(1)
+  set.seed(123)
   # https://stackoverflow.com/questions/16274788/k-means-and-mahalanobis-distance 
   # cov(X) = R'R
   # y = XR^-1
   X <- as.matrix(tpxlcov[[i]][,1:5])
-  # Rescale the data
+  # Re-scale the data
   C <- chol(var(X))
   y <- X %*% qr.solve(C)
-  k2 <- kmeans(y, centers = 15)
-  tpxlcov[[i]]$cluster15 <- as.numeric(k2$cluster)
+  k2 <- kmeans(y, centers = M)
+  tpxlcov[[i]][, paste0("cluster", M)] <- as.numeric(k2$cluster)
+}
 }
 
 # export data
@@ -94,9 +102,3 @@ saveRDS(tfires, "data/tfires.rds")
 saveRDS(tpxlcov, "data/tpxlcov.rds")
 saveRDS(tsage, "data/tsage.rds")
 saveRDS(tdfEnv, "data/tdfEnv_covars.rds")
-
-
-
-
-
-
