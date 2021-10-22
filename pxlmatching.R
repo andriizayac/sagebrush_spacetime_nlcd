@@ -82,7 +82,7 @@ library(cluster)
 library(factoextra)
 
 # add cluster 
-for(M in 3:15) {
+for(M in 2:15) {
 for(i in 1:length(tpxlcov)){
   set.seed(123)
   # https://stackoverflow.com/questions/16274788/k-means-and-mahalanobis-distance 
