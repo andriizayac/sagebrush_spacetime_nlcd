@@ -1,4 +1,13 @@
-
+# === masking function for sf
+st_erase = function(x, y) {
+  st_difference(
+    st_geometry(x) %>% st_buffer(0), 
+    st_union(st_combine(st_geometry(y))) %>% st_buffer(0)
+  )
+}
+st_eraseq = function(x, y) { 
+  st_difference(x, st_union(st_combine(st_geometry(y))) )
+}
 # === Data extracting functions
 glm.dat <- function(tsage, tfires, tpxlcov, i=NULL, clN = NULL) {
   # this function generates a data input for log-log gompertz Poisson or Gaussian model
@@ -46,25 +55,36 @@ pxl.dist <- function(dat, dat.m, k) {
   # dat: focal pixel-level covariates
   # dat.m: reference pixel-level covariates
   clusterv <- paste0("cluster", k) 
-  df <- dat.m %>% dplyr::select(-starts_with("cluster"))
-    # group_by_at(clusterv) %>%
-    # summarize_all(mean) %>% dplyr::select(-starts_with("cluster"))
-    ind <- 1:nrow(df)
-    if(nrow(df) > 10000) {
-      ind <- sample(ind, 10000)
-      df <- df[ind,]
-    }
+  <<<<<<< HEAD
+  df <- dat.m %>%
+    group_by_at(clusterv) %>%
+    summarize_all(mean) %>% dplyr::select(-starts_with("cluster"))
   mah.p <- StatMatch::mahalanobis.dist(dat[, 1:5], df)
   
-  pdist <- apply(mah.p, 1, function(x) {
-    dat.m[,clusterv][which(x <= min(x) + sd(x) )]
-    } )
-  
-  weights <- sapply(pdist, function(x) table(x)/length(x))
-  clusters <- sapply(weights, function(x) as.numeric(names(x)) )
-  
-  # dat$cluster <- dat.m[ind, clusterv][ apply(mah.p, 1, which.min) ]
-  return( list(clusters = clusters, weights = weights) )
+  dat$cluster <- apply(mah.p, 1, which.min)
+  return(dat)
+}
+=======
+  df <- dat.m %>% dplyr::select(-starts_with("cluster"))
+# group_by_at(clusterv) %>%
+# summarize_all(mean) %>% dplyr::select(-starts_with("cluster"))
+ind <- 1:nrow(df)
+if(nrow(df) > 10000) {
+  ind <- sample(ind, 10000)
+  df <- df[ind,]
+}
+mah.p <- StatMatch::mahalanobis.dist(dat[, 1:5], df)
+
+pdist <- apply(mah.p, 1, function(x) {
+  dat.m[,clusterv][which(x <= min(x) + sd(x) )]
+} )
+
+weights <- sapply(pdist, function(x) table(x)/length(x))
+clusters <- sapply(weights, function(x) as.numeric(names(x)) )
+
+# dat$cluster <- dat.m[ind, clusterv][ apply(mah.p, 1, which.min) ]
+return( list(clusters = clusters, weights = weights) )
 }
 
 
+>>>>>>> f723dfb9c191f9cf901bf2c8daa06516b9abf69f
