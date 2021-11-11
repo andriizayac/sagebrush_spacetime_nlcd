@@ -1,3 +1,14 @@
+# === mask function for sf
+st_erase = function(x, y) {
+  st_difference(
+    st_geometry(x) %>% st_buffer(0), 
+    st_union(st_combine(st_geometry(y))) %>% st_buffer(0)
+  )
+}
+st_eraseq = function(x, y) { 
+  st_difference(x, st_union(st_combine(st_geometry(y))) )
+}
+
 # === vectorize function from: 'matrixcalc'
 vec <- function(x) {return( t(t(as.numeric(x))))}
 
