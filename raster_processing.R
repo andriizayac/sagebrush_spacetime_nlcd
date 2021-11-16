@@ -1,4 +1,4 @@
-pkgs <- c("raster", "sf", "rgdal", "foreach", "doParallel", "dplyr", "spdplyr")
+pkgs <- c("raster", "sf", "foreach", "doParallel", "dplyr")
 sapply(pkgs, require, character.only = T)
 
 ################################ This script collects env data [currently not: and matches sites using Mahalanobis distance metric]
@@ -6,8 +6,7 @@ sapply(pkgs, require, character.only = T)
 # --- import fire  polygons
 path_fires <- "D:/Landsat_eros/nlcd_geospatial_RxFire/"
 
-fpols <- readOGR(paste0(path_fires, list.files(path_fires, pattern = "\\_Rx0_blm.shp$"))) %>%
-  filter(clipAre > 10)
+fpols <- st_read(paste0(path_fires, list.files(path_fires, pattern = "\\_rx0_blm.shp$")))
 
 N <- nrow(fpols)
 
@@ -52,10 +51,11 @@ fs03sd <- paste0(path_rast, grep(pattern = "smap_1km_2016_2021_03_sd", rlist, va
 
 # --- create a nested list for each covariate x site; first entry of a list is a name
 covlist <- list() 
-rlist1 <- c(rlist[3], rlist[2], rlist[7]) # not used except for reprojection
-fwgs <- spTransform(fpols, raster(paste0(path_rast, rlist1[1]))@crs)
+# rlist1 <- c(rlist[3], rlist[2], rlist[7]) # not used except for reprojection
+fwgs <- st_transform(fpols, raster(paste0(path_rast, rlist[3]))@crs)
 
 for(i in 1:length(rlist)){
+  cat(" working on---", i, "---raster ")
   f = raster( paste0(path_rast, rlist[i]) )
   covlist[[i]] = rlist[[i]]
   for(j in 1:N){
@@ -90,47 +90,39 @@ sagecrs <- "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 +x_0=0 +y_0=0
 +ellps=WGS84 +towgs84=0,0,0,-0,-0,-0,0 +units=m +no_defs"
 
 
-fproj <- spTransform(fpols, sagecrs)
+fproj <- st_transform(fpols, sagecrs)
 
-# combine annual rasters
+# combine annual rasters into a stack
 temp <- raster(paste0(path_sage, slist[1]))
-# for(i in 1:N) { 
-#   temp = mask(crop(r, fproj[i,]), fproj[i,])
-#   temp[values(temp) > 99] = NA
-#   sagelist[[i]] = temp
-# }
-# 
+
 for(j in 2:length(slist)) {
   r <- raster(paste0(path_sage, slist[j]))
   temp <- addLayer(temp, r)
 }
 sagestack <- temp
 
-# crop and mask shagerush and shrub rasterstacks ##################################
+# === crop and mask sagebrush and shrub raster stacks ####################
 cl = makeCluster(22)
 registerDoParallel(cl)
 
 flist = foreach(i=1:N, .packages = c('raster','rgdal', 'sf')) %dopar% {
-  temp = mask(crop(sagestack, fproj[i,]), fproj[i, ])
-  values(temp)[values(temp) > 99] <- NA
+  temp <- sagestack %>% 
+    crop(fproj[i, ]) %>% 
+    mask(fproj[i, ]) %>%  
+    reclassify(rcl = t(matrix( c(100, Inf, NA))))
   temp
 }
 stopCluster(cl)
-######################################################
+############### === finish parallel processing
 
 # create an index for fires to be removed (no data or 0's)
-ins <- rep(NA, times = N)
-for(i in 1:N) {
-  ins[i] = ifelse(flist[[i]][[1]]@data@max < 1 , 0, 1)
-}
-
+ins <- sapply(flist, function(x) { ifelse( max(x@data@max) < 1, 0, 1) })
 
 # ---------------------------------------------------------------- PROCEED FROM HERE
 path <- "D:/Landsat_eros/"
 ### === Import clipped layers
 # saveRDS(sagelist, paste0(path, "usgs_sagebrush/sagelist.rds"))
 # sagelist = readRDS(paste0(path,"usgs_sagebrush/sagelist.rds"))
-
 
 # --- combine environmental covariates into a summary data frame
 dfEnv <- data.frame(dem_mean = rep(NA, N), dem_sd = NA,
@@ -149,7 +141,8 @@ for(i in 1:N){
   dfEnv[i,9] = cellStats(covlist[[11]][[i+1]], stat = 'mean')
   dfEnv[i,10] = cellStats(covlist[[6]][[i+1]], stat = 'mean')
 }
-# create an index for fires to be removed (no covariate data)
+
+# --- create an index for fires to be removed (no covariate data)
 ins.cov <- as.numeric(complete.cases(dfEnv))
 
 # site level covariate data frame
@@ -158,10 +151,12 @@ ins.cov <- as.numeric(complete.cases(dfEnv))
 
 # ========================= subset fires, sage rasters, covariates based on 'outs'
 n <- sum(ins & ins == ins.cov) 
-fpols1 <- fpols[ins == T & ins.cov == T, ]
-fproj1 <- fproj[ins == T & ins.cov == T, ]
-dfEnv1 <- dfEnv[ins == T & ins.cov == T, ]
-sagelist <- flist[ins==T & ins.cov == T]
+insfin <- ins == T & ins.cov == T
+  
+fpols1 <- fpols[insfin, ]
+fproj1 <- fproj[insfin, ]
+dfEnv1 <- dfEnv[insfin, ]
+sagelist <- flist[insfin]
 
 pxldemcov <- covlist[[3]][c(0, ins) == T & c(0, ins.cov) == T]
 pxlchilicov <- covlist[[2]][c(0, ins) == T & c(0, ins.cov) == T]
@@ -174,6 +169,8 @@ saveRDS(fproj1, file = paste0(path, "fpolygons.rds"))
 saveRDS(dfEnv1, file = paste0(path, "dfEnv_covars.rds"))
 saveRDS(list(dem = pxldemcov,chili =  pxlchilicov, som = pxlsomcov), file = paste0(path, "pxlcovlist.rds"))
 
+
+# === next: carry on to pxlmatching.R
 
 # --- calculate pairwise Mahalanobis distance at Site Level - may not be necessary for now
 # library(StatMatch)

@@ -1,5 +1,5 @@
 # === libraries + paths
-pkgs <- c("cluster", "raster", "rgdal", "spdplyr")
+pkgs <- c("cluster", "raster", "rgdal", "dplyr", "sf")
 sapply(pkgs, require, character.only = T)
 
 years <- c(1985:2018)
@@ -35,19 +35,17 @@ ssize <- sapply(sagedf, nrow) # range of sample sizes
 
 maxdiff <- rep(NA, N)
 for(i in 1:N){
-  l <- as.numeric(apply(sagedf[[i]], 2, function(x) { mean(x[4:24]) } ))
+  l <- as.numeric(apply(sagedf[[i]], 2, function(x) { mean(x[1:23]) } ))
   maxdiff[i] <- min(diff(l))
 }
 
 diffins <- which(sapply(maxdiff, function(x) { -x > 1 }))
-sizeins <- which(ssize > 200)
 
-
-subid <- sizeins[sizeins %in% diffins]
-# test set, manually picked
-# visualize
-# par(mfrow = c(4,3), mar = c(1,2,1,1))
-# for(i in 1:12){
+subid <- diffins
+#test set, manually picked
+#visualize
+# par(mfrow = c(2,2), mar = c(1,2,1,1))
+# for(i in 176:179){
 #   j = subid[i]
 #   matplot(t(sagedf[[j]]), type = "l", col = rgb(.5, 0, .5, .05), main = j)
 #   abline(v = fires$FireYer[j]-1984, lwd = 2)
@@ -60,6 +58,7 @@ tfires <- fires[subid, ]
 tsage <- sagedf[subid]
 tdfEnv <- dfEnv[subid, ]
 tpxlcov <- covdf[subid]
+
 # remove NORTH BLUE MOUNTAIN fire as there is no variation 
 outid <- which(tfires$FireNam == "NORTH BLUE MOUNTAIN")
 tfires <- tfires[-outid, ]
@@ -90,9 +89,10 @@ for(i in 1:length(tpxlcov)){
   # y = XR^-1
   X <- as.matrix(tpxlcov[[i]][,1:5])
   # Re-scale the data
-  C <- chol(var(X))
-  y <- X %*% qr.solve(C)
-  k2 <- kmeans(y, centers = M)
+  # C <- chol(var(X))
+  # y <- X %*% qr.solve(C)
+  y = scale(X)
+  k2 <- kmeans(y, centers = M, iter.max = 200, algorithm = "MacQueen")
   tpxlcov[[i]][, paste0("cluster", M)] <- as.numeric(k2$cluster)
 }
 }
@@ -102,3 +102,5 @@ saveRDS(tfires, "data/tfires.rds")
 saveRDS(tpxlcov, "data/tpxlcov.rds")
 saveRDS(tsage, "data/tsage.rds")
 saveRDS(tdfEnv, "data/tdfEnv_covars.rds")
+
+# === next: model_fit.R

@@ -119,6 +119,9 @@ findf %>%
 st_write(findf, paste0(path, "fire_spatial_inputs/GBLCC_1987_2007_ct_1_rx0_blm.shp"),
          delete_layer = TRUE)
 
+st_write(findf, paste0(path, "GBLCC_1987_2007_ct_1_rx0_blm.shp"),
+         delete_layer = TRUE)
 
+# === next: carry on to raster_processing.R
 
 
