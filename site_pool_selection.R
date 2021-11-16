@@ -1,41 +1,59 @@
 # 
-pkgs <- c("raster", "sf", "rgdal", "cluster", "spdplyr", "rgeos", "snow")
+pkgs <- c("sf", "dplyr", "snow", "foreach", "doParallel")
 sapply(pkgs, require, character.only = T)
 
 path <- "D:/Landsat_eros/nlcd_geospatial_RxFire/"
 prjcrs <- CRS("+init=epsg:5070")
+prjepsg <- 5070
 
 # === load base layers
-gblcc <- readOGR(paste0(path, "Great Basin Landscape Conservation Cooperative Boundary/GreatBasin_LCC.shp")) %>%
-  spTransform(prjcrs)
+gblcc <- st_read(paste0(path, "Great Basin Landscape Conservation Cooperative Boundary/GreatBasin_LCC.shp")) %>%
+  st_transform(prjepsg)
 
-blmlcc <- readOGR(paste0(path, "BLM_National_Surface_Management_Agency/sma_wm_GreatBasin_LCC_blm/sma_wm_GreatBasin_LCC_blm.shp")) 
-
-blmlcc@proj4string <- CRS("+init=epsg:3857")
-blmlcc <- spTransform(blmlcc, prjcrs)
+blmlcc <- st_read(paste0(path, "BLM_National_Surface_Management_Agency/sma_wm_GreatBasin_LCC_blm/sma_wm_GreatBasin_LCC_blm.shp")) %>% 
+  st_set_crs(3857) %>%
+  st_transform(prjepsg)
 
 # === WILDFIRE DATASET
-firesOne <- readOGR(paste0(path, "GB_wildfire_subset_nlcd_proj/GB_wildfire_subset/GB_wildfire_subset_1951_2018_ct_1.shp")) %>%
-  filter(FireYear < 2008 & FireYear > 1986) 
+fires <- st_read(paste0(path, "GB_wildfire_subset_nlcd_proj/GB_wildfire_subset/GB_wildfire_subset_1951_2018.shp")) %>%
+  # filter(FireYear > 1986) %>% 
+  filter(FireYear > 1950) %>% 
+  st_transform(prjepsg) %>%
+  st_buffer(0)
+
+# https://r-spatial.github.io/sf/reference/geos_binary_ops.html 
+fint <- st_intersection(fires)
+
+mult <- fint %>% 
+  filter(n.overlaps > 1) %>% 
+  st_buffer(dist = 300)
+
+multun <- st_combine(st_union(mult))
 
 
-firesOnebuff <- buffer(firesOne, width = -300, dissolve = FALSE) %>% spTransform(prjcrs)
+ones <- fint %>% 
+  filter(n.overlaps == 1) %>%
+  st_buffer(dist = 0) 
 
-f = spTransform(firesOnebuff, prjcrs)
+onesout <- st_difference(ones, multun)
+
+st_write(st_collection_extract(onesout, "POLYGON"),
+         paste0(path, "fire_spatial_inputs/fires_ones_1951_epsg5070.shp"), 
+         delete_layer = FALSE)
 
 # === LTDL DATASET
 
 # polygons
-trtmbuff <- readOGR(paste0(path, "LTDL_May_2020_Geodatabase/ltdl2020_trtm_polygons/ltdl2020_trtm_polygons_treatment_info_join_500buff.shp")) %>%
-  spTransform(prjcrs)
-tins <- gIntersects(trtmbuff, gblcc, byid = T) %>% as.vector()
-trtmbuff <- trtmbuff[tins, ]
+trtmbuff <- st_read(paste0(path, "LTDL_May_2020_Geodatabase/ltdl2020_trtm_polygons/ltdl2020_trtm_polygons_treatment_info_join_500buff.shp")) %>%
+  st_transform(prjepsg)
+tins <- st_intersects(trtmbuff, gblcc)
+trtmbuff <- trtmbuff[ lengths(tins) > 0, ]
 
-projbuff <- readOGR(paste0(path, "LTDL_May_2020_Geodatabase/ltdl2020_proj_polygons/ltdl2020_proj_polygons_500buff.shp")) %>%
-  spTransform(prjcrs)
+projbuff <- st_read(paste0(path, "LTDL_May_2020_Geodatabase/ltdl2020_proj_polygons/ltdl2020_proj_polygons_500buff.shp")) %>%
+  st_transform(prjepsg)
 
-pins <- gIntersects(projbuff, gblcc, byid = T) %>% as.vector()
-projbuff <- projbuff[pins, ]
+pins <- st_intersects(projbuff, gblcc)
+projbuff <- projbuff[ lengths(pins) > 0, ]
 
 # info
 projInfo <- read.csv(paste0(path, "LTDL_May_2020_Geodatabase/ltdl_project_info.csv"))
@@ -43,58 +61,64 @@ trtmInfo <- read.csv(paste0(path, "LTDL_May_2020_Geodatabase/ltdl_trtm_info.csv"
 
 # points
 trtmpts <- st_read(paste0(path, "LTDL_May_2020_Geodatabase/ltdl2020_trtm_pts/ltdl2020_trtm_pts.shp")) %>%
-  left_join(trtmInfo, by = "Trt_ID") %>% st_transform(crs = prjcrs) %>% as_Spatial()
+  left_join(trtmInfo, by = "Trt_ID") %>% 
+  st_transform(prjepsg) 
 projpts <- st_read(paste0(path, "LTDL_May_2020_Geodatabase/ltdl2020_proj_pts/ltdl2020_proj_pts.shp")) %>%
-  left_join(projInfo, by = "Prj_ID") %>% st_transform(crs = prjcrs) %>% as_Spatial()
+  left_join(projInfo, by = "Prj_ID") %>% 
+  st_transform(prjepsg) 
 
 
 # === Clip the fire polygons
-# trtm and proj polygons
+# --- trtm and proj polygons
+fb <- onesout
 
-# faster in a loop with large datasets, easier to troubleshoot
-fb <- firesOnebuff
-for(i in 1:nrow(projbuff)) {
-  print(i)
-  fb = fb - projbuff[i, ]
-}
-fbb <- fb
+trtmbuffun <- st_combine(st_union(trtmbuff))
+fbout <- st_difference(fb, trtmbuffun)
 
-for(i in 1:nrow(trtmbuff)) {
-  print(i)
-  fbb = fbb - trtmbuff[i, ]
-}
+projbuffun <- st_combine(st_union(projbuff))
+fbb <- st_difference(fbout, projbuffun)
+# --- points
+sub <- fbb
 
-# points
-sub = fbb
-sub@proj4string <- prjcrs
+idx <- lengths(st_intersects(sub, trtmpts)) > 0 
+sub <- sub[!idx, ]
+idx <- lengths(st_intersects(sub, projpts)) > 0 
+sub <- sub[!idx, ]
 
-sub <- sub[is.na(over(sub, geometry(trtmpts))), ] # treated
-sub <- sub[is.na(over(sub, geometry(projpts))), ] # projects
+# --- write intermediate output
+st_write(sub, paste0(path, "fire_spatial_inputs/fires_ones_rx0_1950_epsg5070.shp"), delete_layer = FALSE)
 
-writeOGR(sub, paste0(path, "GBLCC_1987_2007_ct_1_Rx0.shp"), "GBLCC_1987_2007_ct_1_Rx0", driver = "ESRI Shapefile", overwrite_layer = TRUE)
+sub <- st_read(paste0(path, "fire_spatial_inputs/fires_ones_rx0_1950_epsg5070.shp"))
 
 fires.rx0 <- sub
 
-fires.rx0@proj4string <- prjcrs
-fires.rx0$clipArea <- gArea(fires.rx0, byid = TRUE) / 10000
+# === blm lands
+blmlccun <- st_combine(st_union(blmlcc))
 
-# writeOGR(fires.rx0, paste0(path, "GBLCC_1987_2007_ct_1_Rx0.shp"), "GBLCC_1987_2007_ct_1_Rx0", driver = "ESRI Shapefile", overwrite_layer = TRUE)
-# sub <- readOGR(paste0(path, "GBLCC_1987_2007_ct_1_Rx0.shp"))
-# blm lands
-blmlist <- list()
-for(i in 1:nrow(blmlcc)) { blmlist[[i]] = buffer(blmlcc[i, ], 0) }
+fires.rx0.blm <- st_intersection(fires.rx0, blmlccun)
 
+st_write(fires.rx0.blm, paste0(path, "fire_spatial_inputs/fires_ones_rx0_blm_1950_epsg5070.shp"), 
+         delete_layer = TRUE)
+plot(fires.rx0.blm[,1])
 
-fires.rx0.blm <- sub
-for(i in 1:length(blmlist)){
-  print(i)
-  fires.rx0.blm <- fires.rx0.blm - blmlist[[i]]
-}
+findf <- fires.rx0.blm %>% 
+  mutate(areaHa_clip = as.numeric(st_area(.)/1e4) ) %>% 
+  filter(FireYear > 1986, FireYear < 2008) %>%
+  filter(areaHa_clip > quantile(areaHa_clip, .66)) %>% 
+  filter(areaHa_clip > quantile(areaHa_clip, .01), 
+         areaHa_clip < quantile(areaHa_clip, .99))
 
-fires.rx0.blm@proj4string <- prjcrs
-fires.rx0.blm$clipArea <- gArea(fires.rx0.blm, byid = TRUE) / 10000
+# === explore in leaflet
+library(leaflet)
+findf %>% 
+  st_transform(4326) %>% 
+  leaflet() %>% addTiles() %>% 
+  addPolygons()
+  
+# === export final product 
+st_write(findf, paste0(path, "fire_spatial_inputs/GBLCC_1987_2007_ct_1_rx0_blm.shp"),
+         delete_layer = TRUE)
 
-writeOGR(fires.rx0.blm, paste0(path, "GBLCC_1987_2007_ct_1_Rx0_blm.shp"), "GBLCC_1987_2007_ct_1_Rx0_blm", driver = "ESRI Shapefile", overwrite_layer = TRUE)
 
 
 
