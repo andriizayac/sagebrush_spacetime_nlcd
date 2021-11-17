@@ -3,56 +3,75 @@ sapply(pkgs, require, character.only = T)
 
 years <- c(1985:2018)
 
-tfires <- readRDS("data/tfires.rds")
-tsage <- readRDS("data/tsage.rds")
-tpxlcov <- readRDS("data/tpxlcov.rds")
-tdfEnv <- readRDS("data/tdfEnv_covars.rds")
-
-kvec <- sapply(tpxlcov, function(x){ mean(x[['prefire']]) })
+source("nlcd/helper_fns.R")
 # ====================================
 # see pxlmatching.R 
-tfires <- readRDS("data/tfires.rds")
-tsage <- readRDS("data/tsage.rds")
-tpxlcov <- readRDS("data/tpxlcov.rds")
-tdfEnv <- readRDS("data/tdfEnv_covars.rds")
+tfires <- readRDS("nlcd/data/tfires.rds")
+tsage <- readRDS("nlcd/data/tsage.rds")
+tpxlcov <- readRDS("nlcd/data/tpxlcov.rds")
+tdfEnv <- readRDS("nlcd/data/tdfEnv_covars.rds")
 
 kvec <- sapply(tpxlcov, function(x){ mean(x[['prefire']]) })
 
-# --- parametrize k prior
-# remotes::install_github("aursiber/fitdistrplus")
-library(fitdistrplus)
-klist <- list()
-for(i in 1:length(tsage)) { klist[[i]] = tpxlcov[[i]]$prefire }
-kprior <- unlist(klist)
-fgamma <- fitdist( kprior[kprior > 0], "gamma" )
+N <- length(kvec)
 
 # === lmer models and predictions ####
-# === glmer 
-mlist.glm <- list()
-mlist0.glm <- list()
-coefs <- list()
-datlist.glm <- list()
-tvec <- rep(NA, length(kvec))
 
-for(i in 1:3){ #length(tsage)
-  print(i)
+mlist <- list()
+mlist0 <- list()
+y <- list()
+yhat <- list()
+for(i in 1:N){
+  	# estimate growth and K parameters
+	dat <- glm.dat(tsage, tfires, tpxlcov, i, 2) # cluster number is a filler here as it is not used in the model
+  	temp <- glm(y ~ 1 + x, offset = log(x), family = poisson(link = "log"), data = dat) #
+
+  	# estimate initial population size based the first 5 years of data post-fire
+  	dat.init <- glm.dat.init(tsage, tfires, tpxlcov, i, 2)
+  	temp_n0 <- glm(cover ~ 1 + t, family = poisson(link = "log"), data = dat.init) # 
   
-  # estimate growth and K parameters
-  dat <- glm.dat(tsage, tfires, tpxlcov, i, 3)
-  temp <- lmer(y ~ (1|cl) + (0+x|cl), REML = TRUE, data = dat) #
-  
-  # estimate initial population size based the first 5 years of data post-fire
-  dat.init <- glm.dat.init(tsage, tfires, tpxlcov, i, 3)
-  temp_n0 <- glmer(cover ~ (1|cl) + (0+t|cl), family = Gamma(link = "log"), data = dat.init) # 
-  
-  # store models
-  mlist.glm[[i]] = temp
-  mlist0.glm[[i]] = temp_n0
-  
-  datlist.glm[[i]] <- data.matrix(tsage[[i]][,c(tfires$FireYer[i]-1984):33])
-  tvec[i] <- ncol( datlist.glm[[i]])
-  coefs[[i]] = data.frame(a = coef(temp)$cl[,2], b = coef(temp)$cl[,1], n0 = exp(coef(temp_n0)$cl[,2]))
+  	# store models
+  	mlist[[i]] = temp
+  	mlist0[[i]] = temp_n0
+  	
+	y[[i]] = dat
+	yhat[[i]] = exp(predict(temp))
 }
 
-sapply(coefs, function(x) { sum(x$n0 < 0) } ) # check for negative N0
+saveRDS(list(mlist = mlist, 
+		mlist0 = mlist0,
+		y = y, yhat = yhat), 
+        	file = paste0("nlcd/models/modout_", 1,".rds"))
+# === glmer 
+#
+#for(k in 2:15){
+#
+#	mlist <- list()
+#	mlist0 <- list()
+#	y <- list()
+#	yhat <- list()
+#	for(i in 1:N){
+#
+#  		# estimate growth and K parameters
+#  		dat <- glm.dat(tsage, tfires, tpxlcov, i, k)
+#  		temp <- glmer(y ~ (1|cl) + (0+x|cl), offset = log(x), family = poisson(link = "log"), data = dat) #
+#  
+#  		# estimate initial population size based the first 5 years of data post-fire
+#  		dat.init <- glm.dat.init(tsage, tfires, tpxlcov, i, k)
+#  		temp_n0 <- glmer(cover ~ (1|cl) + (0+t|cl), family = poisson(link = "log"), data = dat.init) # 
+#  
+#  		# store models
+#  		mlist[[i]] = temp
+#  		mlist0[[i]] = temp_n0
+#  		
+#		y[[i]] = dat
+#		yhat[[i]] = exp(predict(temp))
+#	}
+#
+#	saveRDS(list(mlist = mlist, 
+#			mlist0 = mlist0, 
+#             		y = y, yhat = yhat), 
+#        	file = paste0("nlcd/models/modout_", k,".rds"))
+#}
+#
 

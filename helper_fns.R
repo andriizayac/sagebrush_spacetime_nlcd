@@ -19,7 +19,7 @@ glm.dat <- function(tsage, tfires, tpxlcov, i=NULL, clN = NULL) {
   # output: response - sage % for t = 2,3,..T
   #   predictor - negative sage %, encoding 0 -> .25, for t = 1,2,...T-1
   #   group - cl - pixel-level classes for random effect
-  mat <- data.matrix(tsage[[i]][,c(tfires$FireYer[i]-1984):33])
+  mat <- data.matrix(tsage[[i]][,c(tfires$FireYer[i]-1984):31])
   matcl <- outer(tpxlcov[[i]][, paste0("cluster", clN)], rep(1, ncol(mat)))
   xpr <- vec(mat[,-ncol(mat)])
   ypr <- vec(mat[,-1])
@@ -38,7 +38,7 @@ glm.dat <- function(tsage, tfires, tpxlcov, i=NULL, clN = NULL) {
   return(dat)
 }
 glm.dat.init <- function(tsage, tfires, tpxlcov, i=NULL, clN = NULL){
-  mat <- tsage[[i]][,c(tfires$FireYer[i]-1984):33]
+  mat <- tsage[[i]][,c(tfires$FireYer[i]-1984):31]
   T = ncol(mat)
   colnames(mat) <- 1:T-1
   mat$cl = as.factor(tpxlcov[[i]][,paste0("cluster", clN)])
@@ -51,7 +51,7 @@ glm.dat.init <- function(tsage, tfires, tpxlcov, i=NULL, clN = NULL){
 
 # === Data extracting function for linear model
 lm.dat <- function(tsage, tfires, tpxlcov, i=NULL, clN = NULL){
-  mat <- tsage[[i]][,c(tfires$FireYer[i]-1984):33]
+  mat <- tsage[[i]][,c(tfires$FireYer[i]-1984):31]
   T = ncol(mat)
   colnames(mat) <- 1:ncol(mat)-1
   mat$cl = as.factor(tpxlcov[[i]][,paste0("cluster", clN)])
@@ -87,12 +87,12 @@ pxl.dist <- function(dat, dat.m, coefs, k) {
     mutate(ninit = coefs[[j]]$n0) %>% 
     dplyr::select(-starts_with("cluster")) 
   df0 <- dat %>% 
-    select(1:5, clusterv) %>% 
+    dplyr::select(1:5, clusterv) %>% 
     rename(cl = names(.)[6]) %>% 
-    left_join(coefs[[i]][,3:4], by = "cl") %>% 
+    left_join(coefs[[i]][, 3:4], by = "cl") %>% 
     mutate_at(vars(n0),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) %>% 
     rename(ninit = n0) %>% 
-    select(-cl) 
+    dplyr::select(-cl) 
   
   scdf <- scale(rbind(df0, df))
   n <- nrow(scdf)

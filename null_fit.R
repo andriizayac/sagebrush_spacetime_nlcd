@@ -14,36 +14,56 @@ tdfEnv <- readRDS("data/tdfEnv_covars.rds")
 N <- nrow(tfires)
 
 # --- select 5% of the observations from each sample 
-ssize <- sapply(tsage, function(x) floor(nrow(x)*.05) )
+ssize <- sapply(tsage, function(x) floor(nrow(x)*.1) )
 nullsage <- lapply(tsage, function(x) {
-  ind = sample(1:nrow(x), floor(nrow(x)*.05), replace = F)
+  ind = sample(1:nrow(x), floor(nrow(x)*.1), replace = F)
   x[ind,]
 })
 
 # --- combine data sets - different number of years post-fire don't matter because model is fit recursively
-dat.gen.null <- function(datin, tfires, i) {
-  mat <- data.matrix(nullsage[[i]][,c(tfires$FireYer[i]-1984):33])
-  xpr <- vec(mat[, -ncol(mat)])
-  ypr <- vec(mat[, -1])
-  outs <- which(xpr == 0 | ypr == 0)
-  dat <- data.frame(y = ypr[-outs],
-                    x = xpr[-outs]) 
+dat.gen.null.full <- function(datin, tfires, i) {
+  mat <- nullsage[[i]][,c(tfires$FireYer[i]-1984):31]
+  T <- ncol(mat)
+  colnames(mat) <- 1:T-1
+  dat <- mat %>% 
+    pivot_longer(cols = 1:T) %>%
+    rename(t = name, cover = value) %>% 
+    mutate(t = as.numeric(t)) 
+  df <- data.frame(y = dat$cover[dat$t != 0],
+                   x = dat$cover[dat$t != max(dat$t)],
+                   t = dat$t[dat$t != max(dat$t)])
+  return(df)
 }
-dat.gen.null.init <- function(tsage, tfires, i=NULL){
-  mat <- tsage[[i]][,c(tfires$FireYer[i]-1984):33]
+dat.gen.null <- function(datin, tfires, i) {
+  mat <- nullsage[[i]][,c(tfires$FireYer[i]-1984):31]
+  T <- ncol(mat)
+  colnames(mat) <- 1:T-1
+  dat <- mat %>% 
+    pivot_longer(cols = 1:T) %>%
+    rename(t = name, cover = value) %>% 
+    mutate(t = as.numeric(t)) 
+  df <- data.frame(y = dat$cover[dat$t != 0],
+                   x = dat$cover[dat$t != max(dat$t)],
+                   t = dat$t[dat$t != max(dat$t)]) %>% 
+    filter(x != 0)
+    return(df)
+}
+dat.gen.null.init <- function(datin, tfires, i=NULL){
+  mat <-datin[[i]][,c(tfires$FireYer[i]-1983):31]
   T = ncol(mat)
   colnames(mat) <- 1:T-1
   dat <- pivot_longer(mat, cols = c(1:T)) %>%
     rename(t = name, cover = value) %>% 
-    mutate(t = as.numeric(t), 
-           cover = ifelse(cover == 0, 0, cover)) %>% #runif(1e6, 0,1)
+    mutate(t = as.numeric(t)) %>% 
     filter(t <= 5)
   return(dat)
 }
 # --- initiate a combined data set and append the rest
+dff <- dat.gen.null.full(nullsage, tfires, 1)
 df <- dat.gen.null(nullsage, tfires, 1)
 df0 <- dat.gen.null.init(nullsage, tfires, 1)
 for(i in 2:N) {
+  dff <- rbind(dff, dat.gen.null.full(nullsage, tfires, i))
   df <- rbind(df, dat.gen.null(nullsage, tfires, i))
   df0 <- rbind(df0, dat.gen.null.init(nullsage, tfires, i))
 }
@@ -74,7 +94,7 @@ m <- coef(temp)
 k <- exp(-m[1]/m[2])
 n0 <- exp(coef(temp_n0)[1])
 
-t <- seq(1, 70, by = .1)
+t <- seq(1, 50, by = .1)
 pred <- gomp(m[1], m[2], n0, t)[1,] 
 plot(pred ~ t, type = "l", lwd = 2, 
      main = "Average predictions across the GB", 
@@ -83,9 +103,13 @@ abline(h = k, lty = "dashed", col = "gray", lwd = 1.5)
 #apply(predb[3000:3100,], 1, function(x) {lines(x, type = "l", col = rgb(0,0,0,.1))})
 cat("Region-wide 'equilibrium' abundance is:", k, "%")
 # === MAE using the Gompertz model in t
+y <- list()
+yhat <- list()
+datlist <- list()
+
 mae <- rep(NA, N)
 for(i in 1:N) {
-  y <- tsage[[i]] %>% as.matrix()
+  y <- as.matrix( nullsage[[i]][, c(tfires$FireYer[i]-1984):31] )
   d <- dim(y)
   yhat <- matrix(gomp(m[1], m[2], n0, 1:d[2]), 
                  nr = d[1], 
@@ -95,28 +119,44 @@ for(i in 1:N) {
 plot(density(mae), lwd = 2, main = "MAE Null model", xlab = "%, abundance", xlim = c(0,20))
 # === MAE using the recursive form Gompertz (in-sample only!)
 # --- initiate with the first case
-mat <- data.matrix(nullsage[[1]][,c(tfires$FireYer[1]-1984):33])
-xpr <- vec(mat[, -ncol(mat)])
-ypr <- vec(mat[, -1])
-yhat <- predict.glm(temp, newdata = exp(data.frame(x=xpr)))
+# mat <- data.matrix(nullsage[[1]][,c(tfires$FireYer[1]-1984):33])
+# xpr <- vec(mat[, -ncol(mat)])
+# ypr <- vec(mat[, -1])
+# yhat <- predict.glm(temp, newdata = exp(data.frame(x=xpr)))
+# 
+# inrecerr <- rep(NA, N)
+# inrecerr[1] <- mean(abs(yhat - ypr))
+# for(i in 2:N) {
+#   svMisc::progress(i)
+#   mat <- data.matrix(nullsage[[i]][,c(tfires$FireYer[i]-1984):33])
+#   xpr <- c(xpr, vec(mat[, -ncol(mat)]))
+#   ypr <- c(ypr, vec(mat[, -1]))
+#   yhat <- predict.glm(temp, newdata = exp(data.frame(x=xpr)))
+#   inrecerr[i] <- mean(abs(yhat - ypr))
+# }
+# 
+# lines(density(inrecerr), lwd = 2, lty = "dashed", col = "lightblue", main = "MAE Null - in sample", xlab = "%, abundance")
+# 
+# data.frame(recursive = inrecerr, gomp = mae) %>% 
+#   pivot_longer(cols = 1:2) %>% 
+#   ggplot(aes(x = name, y = value)) + geom_boxplot() +
+#   labs(x = "Model", y = "MAE, %") +
+#   theme_bw()
 
-inrecerr <- rep(NA, N)
-inrecerr[1] <- mean(abs(yhat - ypr))
-for(i in 2:N) {
-  svMisc::progress(i)
-  mat <- data.matrix(nullsage[[i]][,c(tfires$FireYer[i]-1984):33])
-  xpr <- c(xpr, vec(mat[, -ncol(mat)]))
-  ypr <- c(ypr, vec(mat[, -1]))
-  yhat <- predict.glm(temp, newdata = exp(data.frame(x=xpr)))
-  inrecerr[i] <- mean(abs(yhat - ypr))
-}
 
-lines(density(inrecerr), lwd = 2, lty = "dashed", col = "lightblue", main = "MAE Null - in sample", xlab = "%, abundance")
+df %>% 
+  #sample_frac(.1) %>% 
+  group_by(t) %>% 
+  summarize_all(mean) %>% 
+  ggplot(aes(x = t, y = y)) + 
+  geom_point()
+# 
+r <- dff %>% 
+  group_by(t) %>% 
+  summarise_all(mean)
+lines(r$y ~ r$t, lwd = 2, lty = "dashed", col = "brown")
 
-data.frame(recursive = inrecerr, gomp = mae) %>% 
-  pivot_longer(cols = 1:2) %>% 
-  ggplot(aes(x = name, y = value)) + geom_boxplot() +
-  labs(x = "Model", y = "MAE, %") +
-  theme_bw()
+kvec <- sapply(tpxlcov, function(x){ mean(x$prefire)})
 
-
+plot(mae ~kvec)
+abline(0, 1)
