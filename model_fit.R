@@ -3,13 +3,13 @@ sapply(pkgs, require, character.only = T)
 
 years <- c(1985:2018)
 
-source("nlcd/helper_fns.R")
+source("helper_fns.R")
 # ====================================
 # see pxlmatching.R 
-tfires <- readRDS("nlcd/data/tfires.rds")
-tsage <- readRDS("nlcd/data/tsage.rds")
-tpxlcov <- readRDS("nlcd/data/tpxlcov.rds")
-tdfEnv <- readRDS("nlcd/data/tdfEnv_covars.rds")
+tfires <- readRDS("data/tfires.rds")
+tsage <- readRDS("data/tsage.rds")
+tpxlcov <- readRDS("data/tpxlcov.rds")
+tdfEnv <- readRDS("data/tdfEnv_covars.rds")
 
 kvec <- sapply(tpxlcov, function(x){ mean(x[['prefire']]) })
 
@@ -23,7 +23,7 @@ y <- list()
 yhat <- list()
 for(i in 1:N){
   	# estimate growth and K parameters
-	dat <- glm.dat(tsage, tfires, tpxlcov, i, 2) # cluster number is a filler here as it is not used in the model
+	  dat <- glm.dat(tsage, tfires, tpxlcov, i, 2) # cluster number is a filler here as it is not used in the model
   	temp <- glm(y ~ 1 + x, offset = log(x), family = poisson(link = "log"), data = dat) #
 
   	# estimate initial population size based the first 5 years of data post-fire
