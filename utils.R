@@ -66,7 +66,7 @@ fit1 <- dat1 %>%
       data = ., family = poisson(), 
       #prior = c(prior(normal(0, 1), class = "Intercept"),
       #          prior(normal(0, .5), class = "b", lb = -1, ub = 0)),
-      iter = 2000, chains = 3, cores = 3 #,sample_prior = "only"
+      iter = 2000, chains = 3, cores = 3, seed = 123 #,sample_prior = "only"
   )
 
 fit2 <- dat1 %>% 
@@ -75,7 +75,7 @@ fit2 <- dat1 %>%
       data = ., family = poisson(), 
       #prior = c(prior(normal(0, 1), class = "Intercept"),
       #          prior(normal(0, .5), class = "b", lb = -1, ub = 0)),
-      iter = 2000, chains = 3, cores = 3 
+      iter = 2000, chains = 3, cores = 3, seed = 123 
   )
 
 fit3 <- dat1 %>% 
@@ -84,7 +84,7 @@ fit3 <- dat1 %>%
       data = ., family = poisson(), 
       #prior = c(prior(normal(0, 1), class = "Intercept"),
       #          prior(normal(0, .5), class = "b", lb = -1, ub = 0)),
-      iter = 2000, chains = 3, cores = 3 
+      iter = 2000, chains = 3, cores = 3, seed = 123 
   )
 
 fit4 <- dat1 %>% 
@@ -93,7 +93,7 @@ fit4 <- dat1 %>%
       data = ., family = poisson(), 
       #prior = c(prior(normal(0, 1), class = "Intercept"),
       #          prior(normal(0, .5), class = "b", lb = -1, ub = 0)),
-      iter = 2000, chains = 3, cores = 3 
+      iter = 2000, chains = 3, cores = 3, seed = 123 
   )
 
 fit5 <- dat1 %>% 
@@ -102,7 +102,7 @@ fit5 <- dat1 %>%
       data = ., family = poisson(), 
       #prior = c(prior(normal(0, 1), class = "Intercept"),
       #          prior(normal(0, .5), class = "b", lb = -1, ub = 0)),
-      iter = 2000, chains = 3, cores = 3 
+      iter = 2000, chains = 3, cores = 3, seed = 123 
   )
 
 fit6 <- dat1 %>% 
@@ -111,7 +111,25 @@ fit6 <- dat1 %>%
       data = ., family = poisson(), 
       #prior = c(prior(normal(0, 1), class = "Intercept"),
       #          prior(normal(0, .5), class = "b", lb = -1, ub = 0)),
-      iter = 2000, chains = 3, cores = 3 
+      iter = 2000, chains = 3, cores = 3, seed = 123 
+  )
+
+fit7 <- dat1 %>% 
+  mutate(nlogx = -log(x)) %>% # 
+  brm(y ~ (1|cl) + (0 + log(x)|cl) + offset(log(x)),
+      data = ., family = poisson(), 
+      #prior = c(prior(normal(0, 1), class = "Intercept"),
+      #          prior(normal(0, .5), class = "b", lb = -1, ub = 0)),
+      iter = 2000, chains = 3, cores = 3, seed = 123 
+  )
+
+fit8 <- dat1 %>% 
+  mutate(nlogx = -log(x)) %>% # 
+  brm(y ~ 0 + (Intercept|cl) + (0 + log(x)|cl) + offset(log(x)),
+      data = ., family = poisson(), 
+      #prior = c(prior(normal(0, 1), class = "Intercept"),
+      #          prior(normal(0, .5), class = "b", lb = -1, ub = 0)),
+      iter = 2000, chains = 3, cores = 3, seed = 123 
   )
 
 
