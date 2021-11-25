@@ -23,10 +23,12 @@ for(i in 1:3){
 
 sagedf <- list()
 covdf <- list()
+xys <- list()
 for(i in 1:N){
-  dat <- as.data.frame(sage[[i]], xy = FALSE, na.rm = T)
-  sagedf[[i]] <- dat[, 1:33]
-  covdf[[i]] <- dat[, 34:36]
+  dat <- as.data.frame(sage[[i]], xy = TRUE, na.rm = T)
+  xys[[i]] <- dat[, 1:2]
+  sagedf[[i]] <- dat[, 3:35]
+  covdf[[i]] <- dat[, 36:38]
 }
 
 
@@ -58,6 +60,7 @@ tfires <- fires[subid, ]
 tsage <- sagedf[subid]
 tdfEnv <- dfEnv[subid, ]
 tpxlcov <- covdf[subid]
+txys <- xys[subid]
 
 # remove NORTH BLUE MOUNTAIN fire as there is no variation 
 outid <- which(tfires$FireNam == "NORTH BLUE MOUNTAIN")
@@ -65,6 +68,7 @@ tfires <- tfires[-outid, ]
 tsage <- tsage[-outid]
 tdfEnv <- tdfEnv[-outid, ]
 tpxlcov <- tpxlcov[-outid]
+txys <- txys[-outid]
 
 for(i in 1:length(tpxlcov)){
   var1 <- apply(tsage[[i]][, 1:(tfires$FireYer[i]-1985)], 1, mean)
@@ -102,5 +106,5 @@ saveRDS(tfires, "data/tfires.rds")
 saveRDS(tpxlcov, "data/tpxlcov.rds")
 saveRDS(tsage, "data/tsage.rds")
 saveRDS(tdfEnv, "data/tdfEnv_covars.rds")
-
+saveRDS(txys, "data/txys.rds")
 # === next: model_fit.R
