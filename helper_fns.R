@@ -1,7 +1,7 @@
 # === change color alpha
 col_a <- function(col, alpha) {
   c <- col2rgb(col)
-  cola <- rgb(c[1], c[2], c[3], alpha)
+  cola <- rgb(c[1]/255, c[2]/255, c[3]/255, alpha)
   return(cola)
 }
 
