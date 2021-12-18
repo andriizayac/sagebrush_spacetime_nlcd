@@ -66,6 +66,11 @@ for(i in 1:length(rlist)){
 
 
 # --- sagebrush rasters
+# --- Homer, C., Rigge, M., Shi, H., Meyer, D., Bunde, B., Granneman, B., Postma, K., Danielson, P., Case, A., and Xian, G., 2020, Remote Sensing Shrub/Grass National Land Cover Database (NLCD) Back-in-Time (BIT) Products for the Western U.S., 1985 - 2018: U.S. Geological Survey data release, https://doi.org/10.5066/P9C9O66W. 
+
+# --- https://www.sciencebase.gov/catalog/item/5ed816df82ce7e579c670048
+
+
 # clip rasters to GB_LCC
 # need to loop through 3 directories by years
 # dcew = readOGR("C:/Users/CaughlinLab/Desktop/Landsat_eros/DryCreek/dcew_burned_area.shp")
