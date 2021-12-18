@@ -1,3 +1,10 @@
+# === change color alpha
+col_a <- function(col, alpha) {
+  c <- col2rgb(col)
+  cola <- rgb(c[1]/255, c[2]/255, c[3]/255, alpha)
+  return(cola)
+}
+
 # === mask function for sf
 st_erase = function(x, y) {
   st_difference(
@@ -81,18 +88,20 @@ pxl.dist <- function(dat, dat.m, coefs, k) {
   # k: number of cluster to be considered
   # output: an integer vector for each pixel in a target dataset
   clusterv <- paste0("cluster", k) 
-  df <- dat.m %>% dplyr::select(1:3, clusterv) %>%  
+  df <- dat.m %>% dplyr::select(1:5, clusterv) %>%  
     group_by_at(clusterv) %>%
     summarize_all(mean) %>% 
     mutate(ninit = coefs[[j]]$n0) %>% 
-    dplyr::select(-starts_with("cluster"), -ninit) 
+    dplyr::select(-starts_with("cluster")) 
   df0 <- dat %>% 
-    dplyr::select(1:3, clusterv) %>% 
-    rename(cl = names(.)[4]) %>% 
+    dplyr::select(1:5, clusterv) %>% 
+    rename(cl = names(.)[6]) %>% 
     left_join(coefs[[i]][, 3:4], by = "cl") %>% 
     mutate_at(vars(n0),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) %>% 
     rename(ninit = n0) %>% 
-    dplyr::select(-cl, -ninit) 
+    #dplyr::select(-ninit) %>% 
+    group_by(cl) %>% 
+    summarize_all(mean) %>% dplyr::select(-cl)
   
   scdf <- scale(rbind(df0, df))
   n <- nrow(scdf)
