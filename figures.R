@@ -1,4 +1,4 @@
-pckg <- c("ggplot2", "dplyr", "tidyr", "sf", "rasterVis", "ggthemes", "patchwork")
+pckg <- c("ggplot2", "dplyr", "tidyr", "sf", "rasterVis", "ggthemes", "patchwork", "grid")
 sapply(pckg, require, character.only = T)
 
 N <- 430
@@ -36,7 +36,7 @@ p1 = ggplot(dat) +
   coord_sf(xlim = c(-122, -111), ylim = c(36, 45), clip = "on") +
   theme_bw() +
   theme(legend.position = "top") + #, plot.margin = margin(1,1,1,0)) + #theme(legend.key.size = unit(1, "cm")) +
-  annotate("text", x = -122, y = 45, label = "(a)", size = 5)
+  annotate("text", x = -121.8, y = 45, label = "(a)", size = 6)
 
 # --- fire case #16
 txys <- readRDS("data/txys.rds")
@@ -51,14 +51,16 @@ rin <- rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = r), crs = sagecrs) %>%
   as("SpatialPixelsDataFrame") %>% as.data.frame() %>% 
   rename("Cover" = "z")
 
-ggplot() +  
+p2 = ggplot() +  
   geom_tile(data=rin, aes(x=x, y=y, fill=Cover), alpha=0.8) + 
   scale_fill_viridis_c() +
   coord_equal() +
-  theme_map() +
-  theme(legend.position="right") +
-  #theme(legend.key.width=unit(1, "cm"), legend.key.height=unit(1.5, "cm")) +
-  annotate("text", x = -113.8, y = 37.975, label = "(b)", size = 5)
+  #theme_map() +
+  theme_bw() + labs(x = "Longitude", y = "Latitude") +
+  theme(legend.position="right", legend.text = element_text(size = 14), 
+        legend.title = element_text(size = 16)) +
+  # theme(legend.key.width=unit(.5, "cm"), legend.key.height=unit(3, "cm")) +
+  annotate("text", x = -113.795, y = 37.975, label = "(b)", size = 6)
 
 # --- clusters
 p3 = rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = tpxlcov[[16]][,'cluster2']), crs = sagecrs) %>% 
@@ -72,7 +74,7 @@ p3 = rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = tpxlcov[[16]][,'cluster2']
   coord_equal() +
   theme_map() +
   theme(legend.position="none") +
-  annotate("text", x = -113.798, y = 37.975, label = "(c)", size = 5)
+  annotate("text", x = -113.795, y = 37.975, label = "(c)", size = 6)
 
 p4 = rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = tpxlcov[[16]][,'cluster2']), crs = sagecrs) %>% 
   projectRaster(crs = CRS(crs_wgs84$wkt)) %>% 
@@ -110,14 +112,17 @@ p6 = rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = tpxlcov[[16]][,'cluster8']
   scale_fill_viridis_d() +
   coord_equal() +
   theme_map() +
-  theme(legend.position="right")
+  theme(legend.position="bottom", legend.text = element_text(size = 14), 
+        legend.title = element_text(size = 16),
+        legend.direction = "horizontal")
 
 
-p33 <- p3 | p4 | p5 | p6
+p33 <- p3 | p4 | p5 | p6 + plot_annotation(theme = theme(plot.margin = margin(0,0,0,0)))
   
-fig1 <- (p1 | p2) / p33 + plot_annotation(theme = theme(plot.margin = margin(1,1,-1,1)))
+fig1 <- (p1 | p2) / p33 + plot_annotation(theme = theme(plot.margin = margin(0,0,0,0))) 
+  # grid.rect(width = 0.98, height = 0.98, gp = gpar(lwd = 3, col = "black", fill = NA))
 ggsave(plot = fig1, filename = "figures/fig1.pdf", width = 240, height = 240, units = "mm")
-# === Null model: requires loading outputs/null_model_lm.rds and outputs/null_model.rds files
+ # === Null model: requires loading outputs/null_model_lm.rds and outputs/null_model.rds files
 par(mfrow = c(1, 2))
 plot(density(mae), lwd = 2, xlab = "Mean absolute error, %", main = "")
 plot(mae ~ jitter(tsf), pch = 19, col = rgb(0, 0, 0, .25), 
