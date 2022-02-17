@@ -1,8 +1,7 @@
-pckg <- c("ggplot2", "dplyr", "tidyr", "sf", "rasterVis", "ggthemes", "patchwork", "grid")
+pckg <- c("brms", "ggplot2", "dplyr", "tidyr", "stringr", "sf", "rasterVis", "ggthemes", "patchwork", "grid")
 sapply(pckg, require, character.only = T)
 
-N <- 430
-
+source("helper_fns.R")
 # === load in data
 tfires <- readRDS("data/tfires.rds")
 tsage <- readRDS("data/tsage.rds")
@@ -10,6 +9,7 @@ tpxlcov <- readRDS("data/tpxlcov.rds")
 tdfEnv <- readRDS("data/tdfEnv_covars.rds")
 txys <- readRDS("data/txys.rds")
 
+N <- nrow(tfires)
 # === Figure 1: maps
 # --- region
 f <- list.files("../", pattern = "GreatBasin_LLC.shp", recursive = TRUE, full.names = TRUE)
@@ -122,7 +122,110 @@ p33 <- p3 | p4 | p5 | p6 + plot_annotation(theme = theme(plot.margin = margin(0,
 fig1 <- (p1 | p2) / p33 + plot_annotation(theme = theme(plot.margin = margin(0,0,0,0))) 
   # grid.rect(width = 0.98, height = 0.98, gp = gpar(lwd = 3, col = "black", fill = NA))
 ggsave(plot = fig1, filename = "figures/fig1.pdf", width = 240, height = 240, units = "mm")
- # === Null model: requires loading outputs/null_model_lm.rds and outputs/null_model.rds files
+
+
+# === Figure 2: null model
+# --- data
+dat <- readRDS("outputs/null_dat.rds")
+dff <- dat$dff
+df <- dat$df
+df0 <- dat$df0
+# --- models
+ms <- readRDS("outputs/null_model_brm.rds")
+tempb <- ms$tempb
+tempb0 <- ms$tempb0
+# --- deterministic prediction
+cb <- posterior_samples(tempb)
+cb0 <- exp( posterior_samples(tempb0)$b_Intercept )
+mb <- exp(-cb$b_Intercept / cb$b_logx)
+t <- 0:99
+predb <- gomp(cb$b_Intercept, cb$b_logx, cb0, t)
+predb.mu <- apply(predb, 2, mean)
+predb.ci <- apply(predb, 2, quantile, probs = c(0.025, 0.975))
+pred <- data.frame(t = t, mu = predb.mu, mulb = predb.ci[1,], muub = predb.ci[2,])
+
+prednoise <- sapply(predb.mu, function(x){
+  rpois(nrow(cb), exp(cb$b_Intercept + cb$b_logx*log(x) + log(x)) )
+})
+# --- stochastic prediction
+set.seed(125)
+yh <- data.frame( matrix(0, nr = nrow(cb), nc = 100) )
+colnames(yh) <- 0:(ncol(yh)-1)
+yh[,1] <-  cb0
+for(i in 2:ncol(yh)) {yh[,i] = rpois(nrow(cb), exp(cb$b_Intercept + cb$b_logx*log(yh[,i-1]) + log(yh[,i-1])) ) }
+# --- end
+
+tmp0 <- yh %>% 
+  as.data.frame() %>% 
+  replace(is.na(.), 0) %>% 
+  mutate(id = 1:nrow(.)) %>% 
+  pivot_longer(cols = 1:100) %>% 
+  rename(t = name, y = value) %>% 
+  mutate(t = as.numeric(t))
+
+tmp <- tmp0 %>% 
+  filter(id %in% 1:30)
+
+yhh <- tmp0 %>% 
+  select(-id) %>% 
+  group_by(t) %>% 
+  summarise(across(everything(), list(sd = sd, mu = mean) )) %>% 
+  ungroup() %>%
+  mutate(mulb = y_mu - y_sd, muub = y_mu + y_sd) %>% 
+  mutate(mulb = ifelse(mulb < 0, 0, mulb))
+
+pnoise <- prednoise %>% 
+  as.data.frame() %>% 
+  replace(is.na(.), 0) %>% 
+  mutate(id = 1:nrow(.)) %>% 
+  pivot_longer(cols = 1:100) %>% 
+  mutate(name = gsub('^.', '', name)) %>% 
+  rename(t = name, y = value) %>% 
+  mutate(t = as.numeric(t)) %>% select(-id) %>% 
+  group_by(t) %>% 
+  summarise(across(everything(), list(sd = sd, mu = mean) )) %>% 
+  ungroup() %>%
+  mutate(y_sd = 2* y_sd) %>% 
+  mutate(mulb = y_mu - y_sd, muub = y_mu + y_sd) %>% 
+  mutate(mulb = ifelse(mulb < 0, 0, mulb))
+
+
+
+p1 <- dff %>% 
+  select(-x, -id) %>% 
+  group_by(t) %>% 
+  summarise(across(everything(), list(sd = sd, mu = mean) )) %>% 
+  ungroup() %>%
+  mutate(mulb = y_mu - y_sd, muub = y_mu + y_sd) %>% 
+  mutate(mulb = ifelse(mulb < 0, 0, mulb)) %>% 
+  ggplot() +
+  geom_ribbon(aes(x = t, ymin = mulb, ymax = muub), alpha=0.15, fill = "maroon") +
+  geom_ribbon(pnoise, mapping = aes(x = t, ymin = mulb, ymax = muub), alpha=0.5, fill = "lightgray") +
+  geom_line(tmp, mapping = aes(x = t, y = y, group = id), alpha = 1, size = 0.5, colour = "skyblue") +
+  geom_line(pnoise, mapping = aes(x = t, y = y_mu), size = 2, colour = "darkblue") +
+  geom_line(aes(x = t, y = y_mu), size = 2, colour = "maroon") +
+  labs(y = "Cover, %", x = "Time since fire, years") +
+  xlim(0, 100) + # ylim(0, 50) +
+  theme_bw() + 
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 16))
+
+# --- calcultate running proportion of zeros
+tmpwide <- tmp0 %>% 
+  pivot_wider(id_cols = id, names_from = t, values_from = y) 
+nn <- apply(tmpwide[,-1], 2, function(x) { 1 - sum(x == 0)/length(x)} )
+
+p2 <- ggplot() + 
+  geom_line(data.frame(n = nn, t = t), mapping = aes(x = t, y = n), size = 2) +
+  xlab("Time since fire, years") + ylab(str_wrap("Proportion of non-zero sagebrush cover", 20)) +
+  theme_bw() + 
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 16))
+
+p1 /  p2
+
+ggsave(plot = fig2, filename = "figures/fig2_v2.pdf", width = 240, height = 210, units = "mm")
+
+
+# === Null model: requires loading outputs/null_model_lm.rds and outputs/null_model.rds files
 par(mfrow = c(1, 2))
 plot(density(mae), lwd = 2, xlab = "Mean absolute error, %", main = "")
 plot(mae ~ jitter(tsf), pch = 19, col = rgb(0, 0, 0, .25), 
@@ -136,12 +239,13 @@ data.frame(Gompertz = mae, LinearFit = maelm) %>%
   ggplot(aes(MAE, group = model, fill = model)) + geom_density(adjust=1.5, alpha=.5) +
   labs(y = "Density") +
   theme_bw()
-# --- global models vs pre-disturbance 
-plot(mae ~ kvec, pch = 19, col = rgb(.5,0,0,.75), bty = "n", xlab = "Pre-disturbance mean, %", ylab = "MAE")
-points(maelm ~ kvec, pch = 19, col = rgb(0,.5,0,.75) )
-abline(0, 1, lwd = 2)
 
-# --- null MAPE and MAE 
+# --- null models vs pre-disturbance 
+# plot(mae ~ kvec, pch = 19, col = rgb(.5,0,0,.75), bty = "n", xlab = "Pre-disturbance mean, %", ylab = "MAE")
+# points(maelm ~ kvec, pch = 19, col = rgb(0,.5,0,.75) )
+# abline(0, 1, lwd = 2)
+
+# ---  MAE 
 nullout <- readRDS("outputs/null_model.rds")
 tsf <- nullout$tsf
 mapenull <- rep(NA, N)
