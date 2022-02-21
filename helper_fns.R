@@ -57,19 +57,6 @@ glm.dat.init <- function(tsage, tfires, tpxlcov, i=NULL, clN = NULL){
   return(dat.init)
 }
 
-# === Data extracting function for linear model
-# not used
-lm.dat <- function(tsage, tfires, tpxlcov, i=NULL, clN = NULL){
-  mat <- tsage[[i]][,c(tfires$FireYer[i]-1984):31]
-  T = ncol(mat)
-  colnames(mat) <- 1:ncol(mat)-1
-  mat$cl = as.factor(tpxlcov[[i]][,paste0("cluster", clN)])
-  dat.init <- pivot_longer(mat, cols = c(1:T)) %>%
-    rename(t = name, cover = value) %>% 
-    mutate(t = as.numeric(t)) 
-  return(dat.init)
-}
-
 # === Gomperz solution in t
 # K * exp(C * exp(-alpha*t)) 
 gomp <- function(a, b, n0, t) {
@@ -91,25 +78,26 @@ pxl.dist <- function(dat, dat.m, coefs, k) {
   # k: number of cluster to be considered
   # output: an integer vector for each pixel in a target dataset
   clusterv <- paste0("cluster", k) 
-  df <- dat.m %>% dplyr::select(1:5, clusterv) %>%  
+  df <- dat.m %>% 
+    dplyr::select(1:5, clusterv) %>%  
     group_by_at(clusterv) %>%
     summarize_all(mean) %>% 
-    mutate(ninit = coefs[[j]]$n0) %>% 
-    dplyr::select(-starts_with("cluster")) 
+    # mutate(ninit = coefs[[j]]$n0) %>% 
+    dplyr::select(-starts_with("cluster"), -stab) 
   df0 <- dat %>% 
     dplyr::select(1:5, clusterv) %>% 
     rename(cl = names(.)[6]) %>% 
-    left_join(coefs[[i]][, 3:4], by = "cl") %>% 
-    mutate_at(vars(n0),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) %>% 
-    rename(ninit = n0) %>% 
-    #dplyr::select(-ninit) %>% 
+    # left_join(coefs[[i]][, 3:4], by = "cl") %>% 
+    # mutate_at(vars(n0),~ifelse(is.na(.x), mean(.x, na.rm = TRUE), .x)) %>% 
+    # rename(ninit = n0) %>% 
+    # dplyr::select(-ninit) %>% 
     group_by(cl) %>% 
-    summarize_all(mean) %>% dplyr::select(-cl)
+    summarize_all(mean) %>% dplyr::select(-cl, -stab)
   
   scdf <- scale(rbind(df0, df))
   n <- nrow(scdf)
   mah.p <- StatMatch::mahalanobis.dist(scdf[1:(n-k), ], scdf[(n-k+1):n, ])
-  
+
   pdist <- apply(mah.p, 1, which.min)
   
   return(pdist)
@@ -162,10 +150,41 @@ pxl.dist.wt <- function(dat, dat.m, k) {
   return( list(clusters = clusters, weights = weights) )
 }
 
-# === calculate Mean Absoute Error between x and y
-mae <- function(x, y){
-  sum(abs(x - mean(y))) / length(x)
+# === Error functions
+mae <- function(e, rel = FALSE, k = NULL){
+  # inputs (vector-valued)
+    # yhat: predicted values
+    # y: observed values
+    # rel: error relative or not
+    # k: a value to relativize by
+  # outputs
+    # a scalar error value
+  
+  if(rel == TRUE) {
+    sum( abs(e) / k) / length(e)  
+  } else {
+    sum(abs(e)) / length(e)
+  }
 }
+rmse <- function(e, rel = FALSE, k = k){
+  # inputs (vector-valued)
+  # yhat: predicted values
+  # y: observed values
+  # rel: error relative or not
+  # k: a value to relativize by
+  # outputs
+  # a scalar error value
+  
+  if(rel == TRUE) {
+      sqrt( sum( ((e)^2) / k) / length(e))   
+  } else {
+    sqrt( sum( (e)^2 ) / length(e) )
+  }
+}
+bias <- function(yhat, y) {
+  sum( (yhat - y) ) / length(yhat)
+}
+
 
 # plot the ts of average shrub values with proposed fire time point
 fig <- function(dat = sagemeans, index = dfspat$idvar, offs = offset, i = k, years = yrs){
@@ -185,6 +204,52 @@ subsetList <- function(alist, var){
     }
   }
   return(slist)
+}
+
+# === prep data for the null model
+# --- combine data sets - different number of years post-fire don't matter because model is fit recursively
+dat.gen.null.full <- function(datin, tfires, i) {
+  # this function differs from the one used in the glm in that zeros from the predictor are not thrown away and are stored in the data
+  mat <- nullsage[[i]][,c(tfires$FireYer[i]-1984):33]
+  T <- ncol(mat)
+  colnames(mat) <- 1:T-1
+  dat <- mat %>% 
+    pivot_longer(cols = 1:T) %>%
+    rename(t = name, cover = value) %>% 
+    mutate(t = as.numeric(t)) 
+  df <- data.frame(y = dat$cover[dat$t != 0],
+                   x = dat$cover[dat$t != max(dat$t)],
+                   t = dat$t[dat$t != max(dat$t)], 
+                   id = i)
+  return(df)
+}
+
+dat.gen.null <- function(datin, tfires, i) {
+  mat <- nullsage[[i]][,c(tfires$FireYer[i]-1984):33]
+  T <- ncol(mat)
+  colnames(mat) <- 1:T-1
+  dat <- mat %>% 
+    pivot_longer(cols = 1:T) %>%
+    rename(t = name, cover = value) %>% 
+    mutate(t = as.numeric(t)) 
+  df <- data.frame(y = dat$cover[dat$t != 0],
+                   x = dat$cover[dat$t != max(dat$t)],
+                   t = dat$t[dat$t != max(dat$t)], 
+                   id = i) %>% 
+    filter(x != 0)
+  return(df)
+}
+
+dat.gen.null.init <- function(datin, tfires, i=NULL){
+  mat <-datin[[i]][,c(tfires$FireYer[i]-1983):33]
+  T = ncol(mat)
+  colnames(mat) <- 1:T-1
+  dat <- pivot_longer(mat, cols = c(1:T)) %>%
+    rename(t = name, cover = value) %>% 
+    mutate(t = as.numeric(t)) %>% 
+    filter(t <= 5) %>% 
+    mutate(id = i)
+  return(dat)
 }
 
 
