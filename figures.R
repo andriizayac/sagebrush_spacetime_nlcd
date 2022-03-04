@@ -10,6 +10,15 @@ tdfEnv <- readRDS("data/tdfEnv_covars.rds")
 txys <- readRDS("data/txys.rds")
 
 N <- nrow(tfires)
+
+# === ggplot theme piece
+
+p0 <- theme_bw() +
+  theme(axis.text = element_text(size = 14), 
+        axis.title = element_text(size = 16))
+
+
+
 # === Figure 1: maps
 # --- region
 f <- list.files("../", pattern = "GreatBasin_LLC.shp", recursive = TRUE, full.names = TRUE)
@@ -185,17 +194,16 @@ pnoise <- prednoise %>%
   group_by(t) %>% 
   summarise(across(everything(), list(sd = sd, mu = mean) )) %>% 
   ungroup() %>%
-  mutate(y_sd = 2* y_sd) %>% 
+  mutate(y_sd = 1* y_sd) %>% 
   mutate(mulb = y_mu - y_sd, muub = y_mu + y_sd) %>% 
   mutate(mulb = ifelse(mulb < 0, 0, mulb))
-
-
 
 p1 <- dff %>% 
   select(-x, -id) %>% 
   group_by(t) %>% 
   summarise(across(everything(), list(sd = sd, mu = mean) )) %>% 
   ungroup() %>%
+  mutate(y_sd = 1* y_sd) %>% 
   mutate(mulb = y_mu - y_sd, muub = y_mu + y_sd) %>% 
   mutate(mulb = ifelse(mulb < 0, 0, mulb)) %>% 
   ggplot() +
@@ -204,84 +212,139 @@ p1 <- dff %>%
   geom_line(tmp, mapping = aes(x = t, y = y, group = id), alpha = 1, size = 0.5, colour = "skyblue") +
   geom_line(pnoise, mapping = aes(x = t, y = y_mu), size = 2, colour = "darkblue") +
   geom_line(aes(x = t, y = y_mu), size = 2, colour = "maroon") +
-  labs(y = "Cover, %", x = "Time since fire, years") +
+  labs(y = "Cover, %", x = "Time since wildfire, years") +
   xlim(0, 100) + # ylim(0, 50) +
   theme_bw() + 
-  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 16))
+  theme(axis.text = element_text(size = 16), axis.title = element_text(size = 16))
 
-# --- calcultate running proportion of zeros
-tmpwide <- tmp0 %>% 
-  pivot_wider(id_cols = id, names_from = t, values_from = y) 
-nn <- apply(tmpwide[,-1], 2, function(x) { 1 - sum(x == 0)/length(x)} )
+ggsave(p1, filename = "figures/fig2.pdf", width = 180, height = 140, units = "mm")
 
-p2 <- ggplot() + 
-  geom_line(data.frame(n = nn, t = t), mapping = aes(x = t, y = n), size = 2) +
-  xlab("Time since fire, years") + ylab(str_wrap("Proportion of non-zero sagebrush cover", 20)) +
-  theme_bw() + 
-  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 16))
+# === Figure 3: MAE figure
+dfvis <- data.frame(insite = insample, 
+                    outsite = maemat[1, ],
+                    out4 = maemat[2, ], 
+                    out14 = maemat[3, ]) %>% 
+  mutate(null = mae.null.mu) %>% 
+  pivot_longer(cols = everything()) %>% 
+  rename("model" = "name", "MAE" = "value") %>% 
+  mutate(model = as.factor(model)) %>% 
+  mutate(model = fct_relevel(.f = model, "insite", "out14", "out4", "outsite", "null")) %>%
+  mutate(model = fct_recode(model, "Null" = "null",
+                            "CV: Site-level" = "outsite",
+                            "In-sample: Site-level" = "insite",
+                            "CV: Site-cluster 4" = "out4",
+                            "CV: Site-cluster 14" = "out14"))
+p1 <- dfvis %>% 
+  ggplot(aes(y=model, x=MAE, height=..density..)) + 
+  ggridges::geom_density_ridges(scale=1, stat="density", panel_scaling = TRUE, trim = 1) + 
+  guides(fill = FALSE) + 
+  theme_bw(base_size = 14) +
+  labs(x = "MAE, %", y = "Model") 
 
-p1 /  p2
+p2 <- dfvis %>% 
+  # mutate(model = fct_rev(model)) %>%
+  group_by(model) %>% 
+  summarise_all(.funs = c("mean", "sd")) %>% 
+  ggplot() + 
+  geom_point(aes(x = model, y = mean),colour = cols[2], size = 4, shape = 15) +
+  geom_point(aes(x = model, y = sd), colour = cols[6], size = 4, shape = 17) +
+  coord_flip() +
+  labs(x = "Model", y = "MAE, %") +
+  theme_bw(base_size = 14) +
+  theme(axis.text.y = element_blank(), axis.title.y = element_blank())
 
-ggsave(plot = fig2, filename = "figures/fig2_v2.pdf", width = 240, height = 210, units = "mm")
+fig3 <- p1 + p2
+
+# ggsave("figures/fig3.pdf", fig3, width = 17, height = 9, units = "cm")
 
 
-# === Null model: requires loading outputs/null_model_lm.rds and outputs/null_model.rds files
-par(mfrow = c(1, 2))
-plot(density(mae), lwd = 2, xlab = "Mean absolute error, %", main = "")
-plot(mae ~ jitter(tsf), pch = 19, col = rgb(0, 0, 0, .25), 
-     ylab = "Mean absolute error, %", xlab = "Time since fire, years")
-mtext("Null Model", side = 3, line = -2, outer = TRUE)
-dev.off()
-# ---
-data.frame(Gompertz = mae, LinearFit = maelm) %>% 
-  pivot_longer(cols = 1:2) %>% 
-  rename(MAE = value, model = name) %>% 
-  ggplot(aes(MAE, group = model, fill = model)) + geom_density(adjust=1.5, alpha=.5) +
-  labs(y = "Density") +
-  theme_bw()
+# === Table 2: 
+# summary of accuracy (out-of-sample)
+# exported from prederr_sensitivity.R as .csv in /Figures/
+# -- show as a figure
+p <- read.csv("figures/Table2a.csv") %>% 
+  mutate(Validation = "In-sample") %>% 
+  bind_rows(read.csv("figures/Table2b.csv") %>% 
+              mutate(Validation = "Out-of-sample")) %>% 
+  pivot_longer(cols = 2:16) %>% 
+  filter(name != "X2") %>% 
+  mutate(name = gsub("X", "", name), var = ifelse(Metric == "MAE%" | Metric == "RMSE%", "Proportional", "Absolute")) %>%
+  mutate(name = as.factor(name))  %>% 
+  mutate(name = fct_relevel(name, "Null", "Site", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13")) %>% 
+  ggplot() +
+  geom_point(aes(x = name, y = value, colour = Metric, shape = Validation), size = 2, alpha = .75) +
+  labs(x = "Model", y = "Error") +
+  facet_wrap(.~var, scales = "free", dir = "v") +
+  scale_color_viridis_d(end = .8) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 14)) + 
+  theme(legend.position="right", legend.text = element_text(size = 12), 
+        legend.title = element_text(size = 14),
+        strip.text = element_text(size=14),
+        legend.direction = "vertical")
 
-# --- null models vs pre-disturbance 
-# plot(mae ~ kvec, pch = 19, col = rgb(.5,0,0,.75), bty = "n", xlab = "Pre-disturbance mean, %", ylab = "MAE")
-# points(maelm ~ kvec, pch = 19, col = rgb(0,.5,0,.75) )
-# abline(0, 1, lwd = 2)
+ggsave("figures/figure4.pdf", plot = p, width = 19, height = 12, units = "cm")
+# --- end
 
-# ---  MAE 
-nullout <- readRDS("outputs/null_model.rds")
-tsf <- nullout$tsf
-mapenull <- rep(NA, N)
+# === Figure 3:
+yerrmat <- readRDS("outputs/bias.rds")
 
-for(i in 1:N) {
-  y <- nullout$datnull[[i]]
-  yhat <- nullout$yhatnull[[i]]
-  mapenull[i] = mean( abs(y[, tsf[i]] - yhat[, tsf[i]])/y[, tsf[i]])
+# - calculate bias
+bmat <- matrix(NA, nr = 15, nc = 29)
+for(i in 1:nrow(bmat)){ bmat[i,] = apply(yerrmat[i,,], 2, median, na.rm = TRUE) }
+
+p1 = bmat %>% 
+  as.data.frame() %>% 
+  rename_with(~str_sub(., start = 2), cols = everything()) %>% 
+  mutate(id = 1:n(), 
+         Model = fct_reorder(as.factor(c('Null', 'Site', paste0('Cluster ', 2:14))), id) ) %>% 
+  pivot_longer(cols = 1:29) %>% 
+  mutate(t = as.numeric(name)) %>% 
+  filter(!is.na(value)) # %>% 
+  ggplot() +
+  geom_hline(yintercept = 0, size = 1.1, colour = "black", linetype = "dashed") +
+  geom_line(aes(x = t, y = value, group = id, colour = Model), size = 1.1) +
+  scale_color_viridis_d(direction = -1) +
+  ylab("Bias, % cover") + xlab("Time since wildfire, years") +
+  theme_bw() +
+  theme(axis.text = element_text(size = 16), axis.title = element_text(size = 16)) + 
+  theme(legend.position="right", legend.text = element_text(size = 14), 
+      legend.title = element_text(size = 16),
+      legend.direction = "vertical")
+# --- end of average bias
+blmat <- matrix(NA, nr = 15, nc = 29)
+bumat <- matrix(NA, nr = 15, nc = 29)
+for(i in 1:nrow(blmat)){ 
+  blmat[i,] = apply(yerrmat[i,,], 2, quantile, prob = 0.33, na.rm = TRUE) 
+  bumat[i,] = apply(yerrmat[i,,], 2, quantile, prob = 0.66, na.rm = TRUE) 
 }
-# --- null MAE
-maenull <- rep(NA, N)
-for(i in 1:N) {
-  y <- nullout$datnull[[i]]
-  yhat <- nullout$yhatnull[[i]]
-  maenull[i] = mean( abs(y[, tsf[i]] - yhat[, tsf[i]]) )
-}
 
-par(mfrow = c(1, 2), mar = c(4, 4, 4, 1))
-plot(density(mapenull), bty = "n", lwd = 3, xlab = "MAPE", main = "")
-plot(density(maenull), bty = "n", lwd = 3, xlab = "MAE", main = "")
-mtext("Null Model", side = 3, line = -2, outer = TRUE)
+lumat <- blmat %>% 
+  as.data.frame() %>% 
+  rename_with(~str_sub(., start = 2), cols = everything()) %>% 
+  mutate(id = 1:n(), 
+         Model = fct_reorder(as.factor(c('Null', 'Site', paste0('Cluster ', 2:14))), id) ) %>% 
+  pivot_longer(cols = 1:29) %>% 
+  mutate(t = as.numeric(name)) %>% 
+  filter(!is.na(value)) %>% 
+  mutate(value2 = bumat %>% 
+           as.data.frame() %>% 
+           rename_with(~str_sub(., start = 2), cols = everything()) %>% 
+           mutate(id = 1:n(), 
+                  Model = fct_reorder(as.factor(c('Null', 'Site', paste0('Cluster ', 2:14))), id) ) %>% 
+           pivot_longer(cols = 1:29) %>% 
+           mutate(t = as.numeric(name)) %>% 
+           filter(!is.na(value)) %>% pull(value))
 
+fig3 <- p1 + 
+  geom_ribbon(filter(lumat, Model == 'Cluster 14'), 
+              mapping = aes(x = t, ymin = value, ymax = value2), alpha=0.15, fill = viridis::viridis(1)) + 
+  geom_ribbon(filter(lumat, Model == 'Null'), 
+              mapping = aes(x = t, ymin = value, ymax = value2), alpha=0.15, fill = viridis::viridis(15)[15])  
 
-# === growth rate and environemtnal covariates - site level alone
-# --- coefs obj from 0-cluster model
-rs <- sapply(coefs, function(x) mean(x$a))
-dd <- sapply(coefs, function(x) mean(x$b))
+ggsave("figures/fig3.pdf", fig3, width = 19, height = 12, units = "cm")
+# --- end
 
-rs[rs < -5] <- NA
-
-par(mfrow = c(2,2), mar = c(4,4,2,1))
-balpha = rgb(0,0,0,.5)
-plot(rs ~ tdfEnv$dem_mean, pch = 19, col = balpha, xlab = "Elevation, m", ylab = "Growth rate")
-plot(rs ~ tdfEnv$tmax, pch = 19, col = balpha, xlab = "Maximum temperature, C", ylab = "Growth rate")
-plot(rs ~ tdfEnv$tmin, pch = 19, col = balpha, xlab = "Minimum temperature, C", ylab = "Growth rate")
-plot(rs ~ tdfEnv$ninit, pch = 19, col = balpha, xlab = "Initial population state, %", ylab = "Growth rate")
 
 
 
