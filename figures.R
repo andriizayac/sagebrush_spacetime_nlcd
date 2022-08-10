@@ -382,7 +382,7 @@ pp <- efin %>%
 fig4 <- p4 + pp + plot_layout(nrow = 2) + 
   plot_annotation(tag_levels = "A")
 
-ggsave("figures/figure4.png", fig4, width = 210, height = 180, units = "mm")
+ggsave("figures/fig5.png", fig4, width = 210, height = 180, units = "mm")
 # === end of Figure 4
 
 # === Figure S4 based on Table 2: 
@@ -418,7 +418,7 @@ p4 <- p %>%
         legend.direction = "vertical")
 # ===============
 
-p %>% 
+ps4 <- p %>% 
   filter(var == "Proportional", Metric != "SD") %>% 
   ggplot() +
   geom_point(aes(x = name, y = value, colour = Metric, shape = Validation), size = 3, alpha = .75) +
@@ -434,5 +434,5 @@ p %>%
         legend.direction = "vertical")
 
 
-ggsave("figures/figureS4.pdf", plot = p, width = 210, height = 120, units = "mm")
+ggsave("figures/figS4.png", plot = ps4, width = 210, height = 120, units = "mm")
 # --- end of Figure S4
