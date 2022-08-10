@@ -1,4 +1,6 @@
-pckg <- c("brms", "ggplot2", "dplyr", "tidyr", "stringr", "sf", "rasterVis", "ggthemes", "patchwork", "grid")
+pckg <- c("brms", "raster", "ggplot2", 
+          "tidyverse", "sf", "rasterVis", "ggthemes", 
+          "patchwork", "grid", "ggridges", "ggspatial")
 sapply(pckg, require, character.only = T)
 
 source("helper_fns.R")
@@ -11,48 +13,77 @@ txys <- readRDS("data/txys.rds")
 
 N <- nrow(tfires)
 
-# === ggplot theme piece
-
+# === a theme piece for reuse with other ggplots
 p0 <- theme_bw() +
   theme(axis.text = element_text(size = 14), 
         axis.title = element_text(size = 16))
+# ==============================================
 
+# === Figure 1: map of the study area 
+# - relies on external shapefiles for a) state, b) Great Basin, c) NorthAmerica boundaries.
+# - source: (a: Conservation Biology Institute: http://databasin.org/datasets/734dae972d9f4e33bb50062e0c2c5e17)
+# - source: (b: www.census.gov)
+# - source: (c: USGS: https://www.sciencebase.gov/catalog/item/4fb555ebe4b04cb937751db9)
 
-
-# === Figure 1: maps
-# --- region
+# - A: region
 f <- list.files("../", pattern = "GreatBasin_LLC.shp", recursive = TRUE, full.names = TRUE)
 f1 <- list.files("../", pattern = "cb_2018_us_state_5m.shp$", recursive = TRUE, full.names = TRUE)
-gb <- st_read(f) %>% st_geometry()
+gb <- st_read(f) %>% st_transform(4326) %>% st_geometry()
 states <- st_read(f1) %>% st_transform(4326) %>% 
-  st_geometry() %>% st_crop(st_buffer(gb, 1e5))
+  st_geometry() %>% 
+  st_crop(st_buffer(gb, 3e4))
 fpts <- readRDS("data/tfires.rds") %>% 
   st_buffer(0) %>% 
   st_transform(4326) %>% 
-  st_geometry() %>% 
-  st_centroid() 
-dat = data.frame(Area_ha = tfires$arH_clp, 
+  st_geometry() %>% st_centroid() 
+
+dat <- data.frame(Area_ha = tfires$arH_clp, 
                  x = st_coordinates(fpts)[,1], 
                  y = st_coordinates(fpts)[,2])
-p1 = ggplot(dat) + 
-  geom_point(aes(x = x, y = y, fill = Area_ha, size = Area_ha), shape = 21, alpha = .7) +
+p1 <- ggplot(dat) + 
+  geom_point(aes(x = x, y = y, size = Area_ha), fill = "grey45", shape = 21, alpha = .7, colour = "grey45") +
   labs(x = "Longitude", y = "Latitude") +
-  scale_fill_viridis_c(guide = "legend") +
-  scale_size_continuous(range = c(0, 5)) +
-  #guide_legend(colour = guide_legend(), size = guide_legend())
-  geom_sf(data = gb, colour = "black", fill = NA) +
-  geom_sf(data = states, colour = "grey45", fill = NA, inherit.aes = TRUE) +
-  coord_sf(xlim = c(-122, -111), ylim = c(36, 45), clip = "on") +
+  scale_size_continuous("Area, ha", range = c(0, 6)) +
+  geom_sf(data = gb, colour = "black", fill = NA, inherit.aes = F) +
+  geom_sf(data = states, colour = "grey45", fill = NA, inherit.aes = F) +
+  coord_sf(xlim = c(-122, -111), ylim = c(36, 45), clip = "on", expand = FALSE) +
+  scale_x_continuous(breaks = c(-112, -114, -116, -118, -120),
+                     labels = c("-112", "-114", "-116", "-118", "-120")) +
+  scale_y_continuous(breaks = (c(38, 40, 42, 44)),
+                     labels = c("38", "40", "42", "44")) +
+  annotation_north_arrow(location = "bl") + 
+  annotation_scale(location = "br", pad_x = unit(.3, "cm"), text_cex = 1.1) +
   theme_bw() +
-  theme(legend.position = "top") + #, plot.margin = margin(1,1,1,0)) + #theme(legend.key.size = unit(1, "cm")) +
-  annotate("text", x = -121.8, y = 45, label = "(a)", size = 6)
+  theme(legend.position = "right") +
+  geom_rect(xmin=-113.3, xmax=-114.25, ymin=37.6, ymax=38.25, alpha = 0, colour = "black", linetype = "dotted", size = 1)
 
-# --- fire case #16
+# North-America inlet
+gb0 <- st_read(f) %>% st_transform(4326) %>% st_bbox() %>% st_as_sfc()
+NorthAm <- st_read(list.files("../", pattern = "boundary_l_v2.shp$", recursive = TRUE, full.names = TRUE)) %>% 
+  filter(COUNTRY %in% c("USA", "MEX", "CAN", "CAN USA", "MEX USA")) %>% 
+  st_crop(xmin = -3000945, ymin = -3002040, xmax = 2505228, ymax = 3506052)
+
+p1a <- ggplot() +
+  geom_sf(data = NorthAm, colour = "grey65", fill = NA, inherit.aes = F) +
+  geom_sf(data = gb0, alpha = 0, col = "black", size = 1.5) +
+  theme_bw() + 
+  theme(text = element_blank(), axis.ticks = element_blank())
+
+
+fig1 <- p1 + inset_element(p1a, left = 0, right = 0.25, bottom = 0.75, top = 0.999)
+
+ggsave(filename = "figures/fig1.pdf", fig1, width = 16, height = 16, units = "cm")
+# === end Figure 1
+
+
+# === Figure 2: An example of a wildfire with a clustering scheme
+# fire case #16: BERYL 
 txys <- readRDS("data/txys.rds")
 sagecrs <- "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0
 +datum=WGS84 +units=m +no_defs"
 crs_wgs84 <- st_crs(4326)
 
+# - A: NLCD raster
 r <- tsage[[16]][,2]
 xy <- txys[[16]]
 rin <- rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = r), crs = sagecrs) %>% 
@@ -60,80 +91,89 @@ rin <- rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = r), crs = sagecrs) %>%
   as("SpatialPixelsDataFrame") %>% as.data.frame() %>% 
   rename("Cover" = "z")
 
-p2 = ggplot() +  
+p2 <- ggplot() +  
   geom_tile(data=rin, aes(x=x, y=y, fill=Cover), alpha=0.8) + 
-  scale_fill_viridis_c() +
-  coord_equal() +
-  #theme_map() +
+  scale_fill_viridis_c("Cover, %", option = "D") +
+  coord_equal() + 
   theme_bw() + labs(x = "Longitude", y = "Latitude") +
-  theme(legend.position="right", legend.text = element_text(size = 14), 
-        legend.title = element_text(size = 16)) +
-  # theme(legend.key.width=unit(.5, "cm"), legend.key.height=unit(3, "cm")) +
-  annotate("text", x = -113.795, y = 37.975, label = "(b)", size = 6)
+  theme(legend.position="right"# , panel.border = element_rect(colour = "red", size = 1.75)
+        ) 
 
-# --- clusters
-p3 = rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = tpxlcov[[16]][,'cluster2']), crs = sagecrs) %>% 
+# - B-E: clusters
+p3 <- rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = tpxlcov[[16]][,'cluster2']), crs = sagecrs) %>% 
   projectRaster(crs = CRS(crs_wgs84$wkt)) %>% 
-  as("SpatialPixelsDataFrame") %>% as.data.frame() %>% 
+  as("SpatialPixelsDataFrame") %>% 
+  as.data.frame() %>% 
   rename("Cluster" = "z") %>% 
   mutate(Cluster = as.factor(1)) %>% 
   ggplot() +  
   geom_tile(aes(x=x, y=y, fill=Cluster), alpha=0.8) + 
-  scale_fill_viridis_d() +
-  coord_equal() +
-  theme_map() +
-  theme(legend.position="none") +
-  annotate("text", x = -113.795, y = 37.975, label = "(c)", size = 6)
-
-p4 = rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = tpxlcov[[16]][,'cluster2']), crs = sagecrs) %>% 
-  projectRaster(crs = CRS(crs_wgs84$wkt)) %>% 
-  as("SpatialPixelsDataFrame") %>% as.data.frame() %>% 
-  rename("Cluster" = "z") %>% 
-  mutate(Cluster = as.factor(round(Cluster))) %>% 
-  ggplot() +  
-  geom_tile(aes(x=x, y=y, fill=Cluster), alpha=0.8) + 
-  scale_fill_viridis_d() +
-  coord_equal() +
-  theme_map() +
-  theme(legend.position="none")
-
-p5 = rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = tpxlcov[[16]][,'cluster4']), crs = sagecrs) %>% 
-  projectRaster(crs = CRS(crs_wgs84$wkt)) %>% 
-  as("SpatialPixelsDataFrame") %>% as.data.frame() %>% 
-  rename("Cluster" = "z") %>% 
-  mutate(Cluster = as.factor(round(Cluster))) %>% 
-  ggplot() +  
-  geom_tile(aes(x=x, y=y, fill=Cluster), alpha=0.8) + 
-  scale_fill_viridis_d() +
+  scale_fill_viridis_d(option = "B") +
   coord_equal() +
   theme_map() +
   theme(legend.position="none") 
-  
 
-p6 = rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = tpxlcov[[16]][,'cluster8']), crs = sagecrs) %>% 
+p4 = rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = tpxlcov[[16]][,'cluster3']), crs = sagecrs) %>% 
   projectRaster(crs = CRS(crs_wgs84$wkt)) %>% 
   as("SpatialPixelsDataFrame") %>% as.data.frame() %>% 
   rename("Cluster" = "z") %>% 
-  filter(Cluster < 9) %>% 
   mutate(Cluster = as.factor(round(Cluster))) %>% 
   ggplot() +  
   geom_tile(aes(x=x, y=y, fill=Cluster), alpha=0.8) + 
-  scale_fill_viridis_d() +
+  scale_fill_viridis_d(option = "B", end = 0.5) +
   coord_equal() +
   theme_map() +
-  theme(legend.position="bottom", legend.text = element_text(size = 14), 
-        legend.title = element_text(size = 16),
-        legend.direction = "horizontal")
+  theme(legend.position="none") 
+
+p5 = rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = tpxlcov[[16]][,'cluster5']), crs = sagecrs) %>% 
+  projectRaster(crs = CRS(crs_wgs84$wkt)) %>% 
+  as("SpatialPixelsDataFrame") %>% as.data.frame() %>% 
+  rename("Cluster" = "z") %>% 
+  mutate(Cluster = as.factor(round(Cluster))) %>% 
+  ggplot() +  
+  geom_tile(aes(x=x, y=y, fill=Cluster), alpha=0.8) + 
+  scale_fill_viridis_d(option = "B", end = 0.75) +
+  coord_equal() +
+  theme_map() +
+  theme(legend.position="none") 
+
+p6 = rasterFromXYZ(data.frame(x = xy$x, y = xy$y, z = tpxlcov[[16]][,'cluster8']), crs = sagecrs) %>%
+  projectRaster(crs = CRS(crs_wgs84$wkt)) %>%
+  as("SpatialPixelsDataFrame") %>% as.data.frame() %>%
+  rename("Cluster" = "z") %>%
+  filter(Cluster < 9) %>%
+  mutate(Cluster = as.factor(round(Cluster))) %>%
+  ggplot() +
+  geom_tile(aes(x=x, y=y, fill=Cluster), alpha=0.8) +
+  scale_fill_viridis_d(option = "B", end = 1) +
+  coord_equal() +
+  theme_map() +
+  theme(legend.position="bottom", 
+        # legend.text = element_text(size = 14),
+        # legend.title = element_text(size = 16),
+        legend.direction = "vertical")
 
 
-p33 <- p3 | p4 | p5 | p6 + plot_annotation(theme = theme(plot.margin = margin(0,0,0,0)))
+p33 <- p3 + p4 + p5 + p6 +
+  plot_layout(ncol = 2, nrow = 2) +
+  plot_annotation(theme = theme(plot.margin = margin(0,0,0,0)))
   
-fig1 <- (p1 | p2) / p33 + plot_annotation(theme = theme(plot.margin = margin(0,0,0,0))) 
-  # grid.rect(width = 0.98, height = 0.98, gp = gpar(lwd = 3, col = "black", fill = NA))
-ggsave(plot = fig1, filename = "figures/fig1.pdf", width = 240, height = 240, units = "mm")
+layout <- c(
+  area(t = 0, l = 1, b = 4, r = 3),
+  area(t = 0, l = 4, b = 4, r = 6)
+)
+
+fig2 <- p2 + p33 + 
+  plot_layout(guides = "collect") + #design = layout,
+  plot_annotation(tag_levels = "A") +
+  theme(axis.text = element_text(size = 24),
+        axis.title = element_text(size = 24))
+  
+ggsave(filename = "figures/fig2.pdf", fig2, width = 20, height = 11, units = "cm")
+# === end Figure 2
 
 
-# === Figure 2: null model
+# === Figure 3:
 # --- data
 dat <- readRDS("outputs/null_dat.rds")
 dff <- dat$dff
@@ -162,8 +202,9 @@ yh <- data.frame( matrix(0, nr = nrow(cb), nc = 100) )
 colnames(yh) <- 0:(ncol(yh)-1)
 yh[,1] <-  cb0
 for(i in 2:ncol(yh)) {yh[,i] = rpois(nrow(cb), exp(cb$b_Intercept + cb$b_logx*log(yh[,i-1]) + log(yh[,i-1])) ) }
-# --- end
+# --- end data preparation
 
+# --- reshape and plot the results
 tmp0 <- yh %>% 
   as.data.frame() %>% 
   replace(is.na(.), 0) %>% 
@@ -176,7 +217,7 @@ tmp <- tmp0 %>%
   filter(id %in% 1:30)
 
 yhh <- tmp0 %>% 
-  select(-id) %>% 
+  dplyr::select(-id) %>% 
   group_by(t) %>% 
   summarise(across(everything(), list(sd = sd, mu = mean) )) %>% 
   ungroup() %>%
@@ -190,7 +231,7 @@ pnoise <- prednoise %>%
   pivot_longer(cols = 1:100) %>% 
   mutate(name = gsub('^.', '', name)) %>% 
   rename(t = name, y = value) %>% 
-  mutate(t = as.numeric(t)) %>% select(-id) %>% 
+  mutate(t = as.numeric(t)) %>% dplyr::select(-id) %>% 
   group_by(t) %>% 
   summarise(across(everything(), list(sd = sd, mu = mean) )) %>% 
   ungroup() %>%
@@ -199,7 +240,7 @@ pnoise <- prednoise %>%
   mutate(mulb = ifelse(mulb < 0, 0, mulb))
 
 p1 <- dff %>% 
-  select(-x, -id) %>% 
+  dplyr::select(-x, -id) %>% 
   group_by(t) %>% 
   summarise(across(everything(), list(sd = sd, mu = mean) )) %>% 
   ungroup() %>%
@@ -217,9 +258,11 @@ p1 <- dff %>%
   theme_bw() + 
   theme(axis.text = element_text(size = 16), axis.title = element_text(size = 16))
 
-ggsave(p1, filename = "figures/fig2.pdf", width = 180, height = 140, units = "mm")
+ggsave(p1, filename = "figures/fig3.png", width = 180, height = 140, units = "mm")
 
-# === Figure 3: MAE figure
+# === end Figure 3
+
+# === Figure 4: MAE figure
 dfvis <- data.frame(insite = insample, 
                     outsite = maemat[1, ],
                     out4 = maemat[2, ], 
@@ -255,52 +298,25 @@ p2 <- dfvis %>%
 
 fig3 <- p1 + p2
 
-# ggsave("figures/fig3.pdf", fig3, width = 17, height = 9, units = "cm")
+# ggsave("figures/fig4.pdf", fig3, width = 17, height = 9, units = "cm")
+# === end of Figure 3
 
-
-# === Table 2: 
-# summary of accuracy (out-of-sample)
-# exported from prederr_sensitivity.R as .csv in /Figures/
-# -- show as a figure
-p <- read.csv("figures/Table2a.csv") %>% 
-  mutate(Validation = "In-sample") %>% 
-  bind_rows(read.csv("figures/Table2b.csv") %>% 
-              mutate(Validation = "Out-of-sample")) %>% 
-  pivot_longer(cols = 2:16) %>% 
-  filter(name != "X2") %>% 
-  mutate(name = gsub("X", "", name), var = ifelse(Metric == "MAE%" | Metric == "RMSE%", "Proportional", "Absolute")) %>%
-  mutate(name = as.factor(name))  %>% 
-  mutate(name = fct_relevel(name, "Null", "Site", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13")) %>% 
-  ggplot() +
-  geom_point(aes(x = name, y = value, colour = Metric, shape = Validation), size = 2, alpha = .75) +
-  labs(x = "Model", y = "Error") +
-  facet_wrap(.~var, scales = "free", dir = "v") +
-  scale_color_viridis_d(end = .8) +
-  theme_bw() +
-  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 14)) + 
-  theme(legend.position="right", legend.text = element_text(size = 12), 
-        legend.title = element_text(size = 14),
-        strip.text = element_text(size=14),
-        legend.direction = "vertical")
-
-ggsave("figures/figure4.pdf", plot = p, width = 19, height = 12, units = "cm")
-# --- end
-
-# === Figure 3:
+# === Figure 4:
 yerrmat <- readRDS("outputs/bias.rds")
 
 # - calculate bias
 bmat <- matrix(NA, nr = 15, nc = 29)
+yerrmat <- yerrmat$yerrmat
 for(i in 1:nrow(bmat)){ bmat[i,] = apply(yerrmat[i,,], 2, median, na.rm = TRUE) }
 
-p1 = bmat %>% 
+p1 <- bmat %>% 
   as.data.frame() %>% 
   rename_with(~str_sub(., start = 2), cols = everything()) %>% 
   mutate(id = 1:n(), 
-         Model = fct_reorder(as.factor(c('Null', 'Site', paste0('Cluster ', 2:14))), id) ) %>% 
+         Model = fct_reorder(as.factor(c('Region', 'Site', paste0('Cluster ', 2:14))), id) ) %>% 
   pivot_longer(cols = 1:29) %>% 
   mutate(t = as.numeric(name)) %>% 
-  filter(!is.na(value)) # %>% 
+  filter(!is.na(value))  %>% 
   ggplot() +
   geom_hline(yintercept = 0, size = 1.1, colour = "black", linetype = "dashed") +
   geom_line(aes(x = t, y = value, group = id, colour = Model), size = 1.1) +
@@ -323,7 +339,7 @@ lumat <- blmat %>%
   as.data.frame() %>% 
   rename_with(~str_sub(., start = 2), cols = everything()) %>% 
   mutate(id = 1:n(), 
-         Model = fct_reorder(as.factor(c('Null', 'Site', paste0('Cluster ', 2:14))), id) ) %>% 
+         Model = fct_reorder(as.factor(c('Region', 'Site', paste0('Cluster ', 2:14))), id) ) %>% 
   pivot_longer(cols = 1:29) %>% 
   mutate(t = as.numeric(name)) %>% 
   filter(!is.na(value)) %>% 
@@ -331,20 +347,92 @@ lumat <- blmat %>%
            as.data.frame() %>% 
            rename_with(~str_sub(., start = 2), cols = everything()) %>% 
            mutate(id = 1:n(), 
-                  Model = fct_reorder(as.factor(c('Null', 'Site', paste0('Cluster ', 2:14))), id) ) %>% 
+                  Model = fct_reorder(as.factor(c('Region', 'Site', paste0('Cluster ', 2:14))), id) ) %>% 
            pivot_longer(cols = 1:29) %>% 
            mutate(t = as.numeric(name)) %>% 
            filter(!is.na(value)) %>% pull(value))
 
-fig3 <- p1 + 
+fig4 <- p1 + 
   geom_ribbon(filter(lumat, Model == 'Cluster 14'), 
               mapping = aes(x = t, ymin = value, ymax = value2), alpha=0.15, fill = viridis::viridis(1)) + 
-  geom_ribbon(filter(lumat, Model == 'Null'), 
+  geom_ribbon(filter(lumat, Model == 'Region'), 
               mapping = aes(x = t, ymin = value, ymax = value2), alpha=0.15, fill = viridis::viridis(15)[15])  
 
-ggsave("figures/fig3.pdf", fig3, width = 19, height = 12, units = "cm")
-# --- end
+ggsave("figures/fig4.pdf", fig4, width = 19, height = 12, units = "cm")
+# --- end of Figure 4
+
+# --- Figure 5
+efin <- read.csv("outputs/error_bar_N_df.csv")
+
+pp <- efin %>% 
+  dplyr::select(Null, Site, V2, V12) %>% 
+  rename("Cluster 4" = V2, "Cluster 12" = V12, Region = Null) %>% 
+  pivot_longer(cols = everything()) %>% 
+  mutate(var = as.factor(name)) %>% 
+  mutate(Model = fct_rev(fct_relevel(var, "Region", "Site", "Cluster 4", "Cluster 12"))) %>% 
+  ggplot(aes(x = value, y = Model, colour = Model, fill = Model)) + 
+  geom_density_ridges(scale = 3, alpha = .5) + # geom_density(alpha = .25) +
+  labs(x = "Error: cover, %", y = "Density") +
+  geom_vline(xintercept = 0) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 14), 
+        axis.title = element_text(size = 14), 
+        strip.text = element_text(size=14))
+
+fig4 <- p4 + pp + plot_layout(nrow = 2) + 
+  plot_annotation(tag_levels = "A")
+
+ggsave("figures/figure4.png", fig4, width = 210, height = 180, units = "mm")
+# === end of Figure 4
+
+# === Figure S4 based on Table 2: 
+# summary of accuracy (out-of-sample)
+# exported from prederr_sensitivity.R as .csv in /Figures/
+# -- show as a figure: Figure 4
+p <- read.csv("figures/Table2a.csv") %>% 
+  rename(Region = Null) %>% 
+  mutate(Validation = "In-sample") %>% 
+  bind_rows(read.csv("figures/Table2b.csv") %>% 
+              mutate(Validation = "Out-of-sample") %>% 
+              rename(Region = Null)) %>% 
+  pivot_longer(cols = 2:16) %>% 
+  filter(name != "X2") %>% 
+  mutate(name = gsub("X", "", name), var = ifelse(Metric == "MAE%" | Metric == "RMSE%", "Proportional", "Absolute")) %>%
+  mutate(name = as.factor(name))  %>% 
+  mutate(name = fct_relevel(name, "Region", "Site", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"))
+
+# ===== for Figure 4
+p4 <- p %>% 
+  filter(var == "Absolute", Metric != "SD") %>% 
+  ggplot() +
+  geom_point(aes(x = name, y = value, colour = Metric, shape = Validation), size = 3, alpha = .75) +
+  scale_x_discrete(labels = c("Region", "Site", paste("Cluster", c(3:14)))) +
+  labs(x = "Model", y = "Error, %") +
+  theme_bw() +
+  theme(axis.text = element_text(size = 14), 
+        axis.title = element_text(size = 14),
+        axis.text.x = element_text(size = 14, angle = 45, hjust = 1),) + 
+  theme(legend.position="right", legend.text = element_text(size = 12), 
+        legend.title = element_text(size = 14),
+        strip.text = element_text(size=14),
+        legend.direction = "vertical")
+# ===============
+
+p %>% 
+  filter(var == "Proportional", Metric != "SD") %>% 
+  ggplot() +
+  geom_point(aes(x = name, y = value, colour = Metric, shape = Validation), size = 3, alpha = .75) +
+  scale_x_discrete(labels = c("Region", "Site", paste("Cluster", c(3:14)))) +
+  labs(x = "Model", y = "Error, %") +
+  theme_bw() +
+  theme(axis.text = element_text(size = 14), 
+        axis.title = element_text(size = 14),
+        axis.text.x = element_text(size = 14, angle = 45, hjust = 1),) + 
+  theme(legend.position="right", legend.text = element_text(size = 12), 
+        legend.title = element_text(size = 14),
+        strip.text = element_text(size=14),
+        legend.direction = "vertical")
 
 
-
-
+ggsave("figures/figureS4.pdf", plot = p, width = 210, height = 120, units = "mm")
+# --- end of Figure S4
