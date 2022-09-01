@@ -1,10 +1,13 @@
+# === prior: raster_processing.R
+
 # === libraries + paths
 pkgs <- c("cluster", "raster", "rgdal", "dplyr", "sf")
 sapply(pkgs, require, character.only = T)
 
 years <- c(1985:2018)
 
-# === import data
+# === import data: these data represent wildfires that meet 
+# the following criteria: single fire, no treatment
 fires <- readRDS("data/fpolygons.rds")
 fires$FireYer <- as.numeric(fires$FireYer)
 sage <- readRDS("data/sagelist.rds")
@@ -32,7 +35,9 @@ for(i in 1:N){
 }
 
 
-# === subset 12 test fires
+# === out of  the larger pool of sites select those that
+# after the fire have a decrease in average cover > 1%
+
 ssize <- sapply(sagedf, nrow) # range of sample sizes
 
 maxdiff <- rep(NA, N)
@@ -44,14 +49,7 @@ for(i in 1:N){
 diffins <- which(sapply(maxdiff, function(x) { -x > 1 }))
 
 subid <- diffins
-#test set, manually picked
-#visualize
-# par(mfrow = c(2,2), mar = c(1,2,1,1))
-# for(i in 176:179){
-#   j = subid[i]
-#   matplot(t(sagedf[[j]]), type = "l", col = rgb(.5, 0, .5, .05), main = j)
-#   abline(v = fires$FireYer[j]-1984, lwd = 2)
-# }
+
 
 # === add pre-disturbance covariates to cov df
 # assigns average stability to the pixels with no variation.
@@ -101,7 +99,7 @@ for(i in 1:length(tpxlcov)){
 }
 }
 
-# export data
+# export data: these are the data that were used in the analysis
 saveRDS(tfires, "data/tfires.rds")
 saveRDS(tpxlcov, "data/tpxlcov.rds")
 saveRDS(tsage, "data/tsage.rds")

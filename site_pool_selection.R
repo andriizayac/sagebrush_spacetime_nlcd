@@ -1,21 +1,24 @@
-# 
+# === This is the first script in the sequence of steps. 
+
 pkgs <- c("sf", "dplyr", "snow", "foreach", "doParallel")
 sapply(pkgs, require, character.only = T)
 
-path <- "D:/Landsat_eros/nlcd_geospatial_RxFire/"
+# Path to working directory. Not operational here due to large volume of data
+path <- "tmp/" 
 prjcrs <- CRS("+init=epsg:5070")
 prjepsg <- 5070
 
 # === load base layers
-gblcc <- st_read(paste0(path, "Great Basin Landscape Conservation Cooperative Boundary/GreatBasin_LCC.shp")) %>%
+gblcc <- st_read(list.files("../", pattern = "GreatBasin_LCC.shp$", recursive = TRUE)) %>%
   st_transform(prjepsg)
 
-blmlcc <- st_read(paste0(path, "BLM_National_Surface_Management_Agency/sma_wm_GreatBasin_LCC_blm/sma_wm_GreatBasin_LCC_blm.shp")) %>% 
+blmlcc <- st_read(list.files("../", 
+                             pattern = "sma_wm_GreatBasin_LCC_blm.shp$", recursive = TRUE)) %>% 
   st_set_crs(3857) %>%
   st_transform(prjepsg)
 
 # === WILDFIRE DATASET
-fires <- st_read(paste0(path, "GB_wildfire_subset_nlcd_proj/GB_wildfire_subset/GB_wildfire_subset_1951_2018.shp")) %>%
+fires <- st_read(list.files("../", pattern = "GB_wildfire_subset_1951_2018.shp$", recursive = TRUE)) %>%
   # filter(FireYear > 1986) %>% 
   filter(FireYear > 1950) %>% 
   st_transform(prjepsg) %>%
@@ -44,26 +47,26 @@ st_write(st_collection_extract(onesout, "POLYGON"),
 # === LTDL DATASET
 
 # polygons
-trtmbuff <- st_read(paste0(path, "LTDL_May_2020_Geodatabase/ltdl2020_trtm_polygons/ltdl2020_trtm_polygons_treatment_info_join_500buff.shp")) %>%
+trtmbuff <- st_read(list.files("../", pattern = "ltdl2020_trtm_polygons_treatment_info_join_500buff.shp$", recursive = TRUE)) %>%
   st_transform(prjepsg)
 tins <- st_intersects(trtmbuff, gblcc)
 trtmbuff <- trtmbuff[ lengths(tins) > 0, ]
 
-projbuff <- st_read(paste0(path, "LTDL_May_2020_Geodatabase/ltdl2020_proj_polygons/ltdl2020_proj_polygons_500buff.shp")) %>%
+projbuff <- st_read(list.files("../", pattern = "ltdl2020_proj_polygons_500buff.shp$", recursive = TRUE)) %>%
   st_transform(prjepsg)
 
 pins <- st_intersects(projbuff, gblcc)
 projbuff <- projbuff[ lengths(pins) > 0, ]
 
 # info
-projInfo <- read.csv(paste0(path, "LTDL_May_2020_Geodatabase/ltdl_project_info.csv"))
-trtmInfo <- read.csv(paste0(path, "LTDL_May_2020_Geodatabase/ltdl_trtm_info.csv"))
+projInfo <- read.csv(list.files("../", pattern = "ltdl_project_info.csv$", recursive = TRUE))
+trtmInfo <- read.csv(list.files("../", "ltdl_trtm_info.csv$", recursive = TRUE))
 
 # points
-trtmpts <- st_read(paste0(path, "LTDL_May_2020_Geodatabase/ltdl2020_trtm_pts/ltdl2020_trtm_pts.shp")) %>%
+trtmpts <- st_read(list.files("../", "ltdl2020_trtm_pts.shp$", recursive = TRUE)) %>%
   left_join(trtmInfo, by = "Trt_ID") %>% 
   st_transform(prjepsg) 
-projpts <- st_read(paste0(path, "LTDL_May_2020_Geodatabase/ltdl2020_proj_pts/ltdl2020_proj_pts.shp")) %>%
+projpts <- st_read(list.files("../", "ltdl2020_proj_pts.shp", recursive = TRUE)) %>%
   left_join(projInfo, by = "Prj_ID") %>% 
   st_transform(prjepsg) 
 
@@ -122,6 +125,6 @@ st_write(findf, paste0(path, "fire_spatial_inputs/GBLCC_1987_2007_ct_1_rx0_blm.s
 st_write(findf, paste0(path, "GBLCC_1987_2007_ct_1_rx0_blm.shp"),
          delete_layer = TRUE)
 
-# === next: carry on to raster_processing.R
+# === next: raster_processing.R
 
 

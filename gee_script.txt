@@ -1,0 +1,104 @@
+var prism = ee.ImageCollection("OREGONSTATE/PRISM/AN81m"),
+    daymet = ee.ImageCollection("NASA/ORNL/DAYMET_V3"),
+    chili = ee.Image("CSP/ERGo/1_0/US/CHILI"),
+    prismNORM = ee.ImageCollection("OREGONSTATE/PRISM/Norm81m"),
+    gb_lcc = ee.FeatureCollection("users/andriizaiats/GreatBasin_LCC"),
+    dem = ee.Image("NASA/NASADEM_HGT/001"),
+    soilC = ee.Image("OpenLandMap/SOL/SOL_ORGANIC-CARBON_USDA-6A1C_M/v02"),
+    soilmoist = ee.ImageCollection("NASA_USDA/HSL/SMAP10KM_soil_moisture");
+    
+// This script requires an input shapefile, Great Basin boundaries, to crop the output data layers.
+    
+Map.centerObject(gb_lcc);
+
+// ------------------- Topographic variables
+
+// 1. CHILI
+var chili_gb = chili.clip(gb_lcc);
+    
+var chilipal = ['blue','red']
+Map.addLayer(chili_gb, {min:0, max:255, palette:chilipal}, "CHILI")
+
+// 2. DEM 
+var dem_gb = dem.select('elevation').clip(gb_lcc);
+
+// 3. Slope
+// Apply an algorithm to an image.
+var slope_gb = ee.Terrain.slope(dem_gb).clip(gb_lcc);
+
+// 4. Aspect
+var aspect_gb = ee.Terrain.aspect(dem_gb).clip(gb_lcc);
+
+
+// ------------------- Climatic variables
+
+// 5. Total precip 
+var totalppt = ee.ImageCollection(prismNORM)
+  .select('ppt')
+  .sum()
+  .clip(gb_lcc)
+  
+// 6. Min temp
+var tmin = ee.ImageCollection(prismNORM)
+  .select('tmin')
+  .min()
+  .clip(gb_lcc)
+  
+
+// 7. Max temp
+  
+var tmax = ee.ImageCollection(prismNORM)
+  .select('tmax')
+  .max()
+  .clip(gb_lcc)
+
+var dempalette = ['yellow','green'];
+Map.addLayer(tmax, { min: 5, max: 30, palette:dempalette }, "Tmax")
+
+// ------------------- Soil variables
+// 8. Soil moisture at 10 km
+//var months = ee.List(['1','2','3','4','5','6','7','8','9','10','11','12']);
+//var months = ee.List.sequence(1, 12)
+// Group by month, and then reduce within groups by mean();
+// the result is an ImageCollection with one image for each
+// month.
+var smmarch = soilmoist.select('ssma')
+  //.filter(ee.Filter.calendarRange(2015, 2020, 'year'))
+  //.filter(ee.Filter.calendarRange(3, 3, 'month'))
+  .filter(ee.Filter.date('2016-01-01', '2020-12-31'))
+  .map(function(x) {return x.clip(gb_lcc)})
+  .reduce(ee.Reducer.stdDev());
+
+print(smmarch)
+
+
+var soilMoistureVis = {
+  min: .5,
+  max: 1.0,
+  palette: ['red', 'blue'],
+};
+Map.addLayer(smmarch, soilMoistureVis, 'Soil Moisture')
+
+// 9. Soil Organic Carbon
+var carb = soilC.select('b10').clip(gb_lcc)
+
+
+
+
+/*
+// *** EXPORT SECTION ********************
+// alter  `image:` input to download each product
+
+/*
+Export.image.toDrive({
+  image: tmax1,
+  folder: 'random',
+  description: 'GB_lcc_TMAX1',
+  maxPixels: 4155469704,
+  //maxPixels: 144784700,
+  fileFormat: 'GeoTIFF',
+  scale: 4000,
+  region: gb_lcc
+})
+*/
+

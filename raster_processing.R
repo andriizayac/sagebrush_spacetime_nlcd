@@ -1,17 +1,18 @@
+# === previous: site_pool_selection
+
 pkgs <- c("raster", "sf", "foreach", "doParallel", "dplyr")
 sapply(pkgs, require, character.only = T)
 
-################################ This script collects env data [currently not: and matches sites using Mahalanobis distance metric]
+# === This script clips env + NLCD rasters to the generated polygons
 
 # --- import fire  polygons
-path_fires <- "D:/Landsat_eros/nlcd_geospatial_RxFire/"
 
-fpols <- st_read(paste0(path_fires, list.files(path_fires, pattern = "\\_rx0_blm.shp$")))
+fpols <- st_read("../supporting_shp_figures/GBLCC_1987_2007_ct_1_rx0_blm/GBLCC_1987_2007_ct_1_rx0_blm.shp")
 
 N <- nrow(fpols)
 
 # --- import rasters to crop --- THIS SECTION OF CODE DOES NOT NEED TO BE REPEATED
-path_rast <- "D:/Landsat_eros/nlcd_cov_raster_data/"
+path_rast <- "~/../../Volumes/az_drive/mae_rasters"
 rlist <- list.files(path_rast, pattern = "\\.tif$")
 
 # --- 1. Topographic data 
@@ -71,24 +72,6 @@ for(i in 1:length(rlist)){
 # --- https://www.sciencebase.gov/catalog/item/5ed816df82ce7e579c670048
 
 
-# clip rasters to GB_LCC
-# need to loop through 3 directories by years
-# dcew = readOGR("C:/Users/CaughlinLab/Desktop/Landsat_eros/DryCreek/dcew_burned_area.shp")
-# dcewproj <- spTransform(dcew, sagecrs)
-# path_shrub <- "D:/NLCD_data_Homer_et_al_2020/sagebrush/"
-# slist <- list.files(path_shrub, pattern = "\\.img$")
-# 
-# r <- raster(paste0(path_shrub, slist[1]))
-# ts = mask(crop(r, dcewproj), dcewproj)
-# ts[values(ts) > 99] = NA
-# for(i in 2:length(slist)){
-#   r <- raster(paste0(path_shrub, slist[i]))
-#   temp = mask(crop(r, dcewproj), dcewproj)
-#   temp[values(temp) > 99] = NA
-#   ts <- addLayer(ts, temp)
-# }
-# writeRaster(ts, "C:/Users/CaughlinLab/Desktop/Landsat_eros/DryCreek/DCEW_1985_2018_sagebrush.tif")
-
 path_sage <- "D:/NLCD_data_Homer_et_al_2020/sagebrush/"
 slist <- list.files(path_sage, pattern = "\\.img$")
 sagecrs <- "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 +x_0=0 +y_0=0
@@ -124,7 +107,7 @@ stopCluster(cl)
 ins <- sapply(flist, function(x) { ifelse( max(x@data@max) < 1, 0, 1) })
 
 # ---------------------------------------------------------------- PROCEED FROM HERE
-path <- "D:/Landsat_eros/"
+path <- "~/../../Volumes/az_drive/mae_rasters/"
 ### === Import clipped layers
 # saveRDS(sagelist, paste0(path, "usgs_sagebrush/sagelist.rds"))
 # sagelist = readRDS(paste0(path,"usgs_sagebrush/sagelist.rds"))
@@ -169,32 +152,11 @@ pxlsomcov <- covlist[[7]][c(0, ins) == T & c(0, ins.cov) == T]
 # note: Ecological covariates are calculated in pxlmatching.R
 
 # export datasets
-saveRDS(sagelist, file = paste0(path, "sagelist.rds"))
-saveRDS(fproj1, file = paste0(path, "fpolygons.rds"))
-saveRDS(dfEnv1, file = paste0(path, "dfEnv_covars.rds"))
-saveRDS(list(dem = pxldemcov,chili =  pxlchilicov, som = pxlsomcov), file = paste0(path, "pxlcovlist.rds"))
+saveRDS(sagelist, file = "data/sagelist.rds")
+saveRDS(fproj1, file = "data/fpolygons.rds")
+saveRDS(dfEnv1, file = "data/dfEnv_covars.rds")
+saveRDS(list(dem = pxldemcov,chili =  pxlchilicov, som = pxlsomcov), 
+        file = "data/pxlcovlist.rds")
 
-
-# === next: carry on to pxlmatching.R
-
-# --- calculate pairwise Mahalanobis distance at Site Level - may not be necessary for now
-# library(StatMatch)
-# 
-# mahdist <- mahalanobis.dist(as.matrix(dfEnv1))
-# diag(mahdist) <- NA
-# Mahalanobis distance matrix
-# saveRDS(mahdist, file = "mahdist_matrix.rds")
-
-
-# --- combine spatial df with the closest matching polygons
-# dfspat <- fire_polygons[idx, ]
-# dfspat$idvar <- 1:n
-# rownames(mahdist) <- dfspat$idvar
-# 
-# for(i in 1:n){
-#   dfspat$closeMatch[i] = which(mahdist[i,] == min(mahdist[i,], na.rm = T))
-# }
-# dfspat$closeMatch <- apply(mahdist, 1, which.min)
-
-
+# === next: pxlmatching.R
 
