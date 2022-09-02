@@ -10,15 +10,15 @@ This repository stores the scripts that were used for the article "Forecasting n
 
 ___  
 
-The repository is organized into folders that contain tabular data, figures,  modeling results, and R scripts.\
+The repository is organized into folders that contain tabular data, figures,  modeling results, and R scripts.
 
 Folders:\
     - **data**: includes data used for the analysis in .rds format.\
-    - **figures**: includes .png/.pdf figures and tables in .csv format.\
+    - **figures**: includes .png/.pdf figures and tables in .csv format.
     
 R scripts:\
-    - *helper_fns.R*: includes user functions defined in the global environment and called into R environment.\ 
-    - *figures.R*: generates figures for the manuscript.\
+    - *helper_fns.R*: includes user functions defined in the global environment and called into R environment.\
+    - *figures.R*: generates figures for the manuscript.
     
 Data extraction and pre-processing. To avoid downloading and pre-processing raw data that could take up to several hours and will require specifying relative file paths, the output from this step is stored in the **data** folder, or can be downloaded from (http://url). However, as a reference the pre-processing scripts are included.\
     - *gee_scrip.txt*: source file for Google Earth Engine data extraction.\
