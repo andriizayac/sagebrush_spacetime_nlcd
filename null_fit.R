@@ -15,9 +15,12 @@ txys <- readRDS("data/txys.rds") # pixel coordinates
 
 N <- nrow(tfires)
 
+# === create a directory to store model outputs
+dir.create("outputs/", showWarnings = FALSE)
+
 # === create data inputs
 # - select 5% of the observations from each sample 
-ssize <- sapply(tsage, function(x) floor(nrow(x)*.1) )
+ssize <- sapply(tsage, function(x) floor(nrow(x)*.05) )
 set.seed(125)
 nullsage <- lapply(tsage, function(x) {
   ind = sample(1:nrow(x), floor(nrow(x)*.1), replace = F)
@@ -34,42 +37,6 @@ for(i in 2:N) {
   df0 <- rbind(df0, dat.gen.null.init(nullsage, tfires, i))
 }
 # saveRDS(list(df = df, df0 = df0, dff = dff), file = "outputs/null_dat.rds")
-
-# running average
-mut <- df0 %>%
-  select(cover, t) %>% 
-  group_by(t) %>% 
-  summarize_all(mean) 
-
-mu0 <- df0 %>% 
-  filter(t == 0) %>% 
-  select(cover, id) %>% 
-  group_by(id) %>% 
-  summarize_all(mean)
-hist(mu0$cover)
-# === end data part
-
-# === lme4 models
-
-# --- estimate growth and dd parameters using lme4
-temp <- glm(y ~ 1 + log(x), offset = log(x), family = poisson(link = "log"), data = df) #
-# --- estimate initial population size based the first 5 years of data post-fire
-temp_n0 <- glm(cover ~ 1 + t, family = poisson(link = "log"), data = df0) # 
-# saveRDS(list(temp = temp, temp_n0 = temp_n0), file = "outputs/null_model_lme.rds")
-
-m <- coef(temp)
-k <- exp(-m[1]/m[2])[[1]]
-n0 <- exp(predict(temp_n0, newdata = data.frame(t = 0)))[[1]] # exp(coef(temp_n0)[1])
-
-t <- seq(1, 29, by = 1)
-pred <- gomp(m[1], m[2], n0, t)[1,] 
-plot(pred ~ t, type = "l", lwd = 4, ylim = c(0, 25),
-     main = "Average predictions across the GB", 
-     ylab = "Predicted cover, %", xlab = "Time, years")
-abline(h = k, lty = "dashed", col = "gray", lwd = 1.5)
-cat("Region-wide 'equilibrium' abundance is:", k, "%")
-
-# === end of lme4 part
 
 # === brms
 ######################################################
@@ -173,7 +140,7 @@ dff.fin.t9 <- bdff %>%
   mutate(yhat = dfyhat %>% 
            filter(t == 9) %>% 
            pull(yhat))
-# write.csv(dff.fin.t9, file = "outputs/null_dat_pred_T9_in.csv")
+write.csv(dff.fin.t9, file = "outputs/null_dat_pred_T9_in.csv")
 # --- end
 
 

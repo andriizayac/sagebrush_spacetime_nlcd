@@ -13,11 +13,9 @@ txys <- readRDS("data/txys.rds")
 
 k <- sapply(tpxlcov, function(x) { mean(x$prefire) } )
 
-# --- site level
-# modout <- readRDS("nlcd/model_output_test/modout_1.rds")
-# datlist <- readRDS("nlcd/model_output_test/datlist_1.rds")
-modout <- readRDS("~/../../Volumes/az_drive/mae_model_outputsmodout_1.rds")
-datlist <- readRDS("~/../../Volumes/az_drive/mae_model_outputsdatlist_1.rds")
+# --- wildfire level
+modout <- readRDS("outputs/models/smodout_1.rds")
+datlist <- readRDS("outputs/models/datlist_1.rds")
 
 coefs <- modout$coefs
 tvec <- modout$tvec
@@ -49,15 +47,13 @@ for(i in 1:N){
 }
 saveRDS(matchsite, file = paste0("outputs/matchpred.rds"))
 
-# --- site + cluster levels
+# --- wildfire + cluster levels
 lout <- list()
 clvec <- 3:14
 for(M in clvec){
 cat("---working on -", M, "-cluster---")  
-  # inm <- paste0("nlcd/model_output_test/modout_", M, ".rds")
-  # ind <- paste0("nlcd/model_output_test/datlist_", M, ".rds")
-  inm <- paste0("~/../../Volumes/az_drive/mae_model_outputsnlcd_out/modout_", M, ".rds")
-  ind <- paste0("~/../../Volumes/az_drive/mae_model_outputsnlcd_out/datlist_", M, ".rds")
+  inm <- paste0("outputs/models/modout_", M, ".rds")
+  ind <- paste0("outputs/models/datlist_", M, ".rds")
   
   modout <- readRDS(inm)
   datlist <- readRDS(ind)
@@ -120,7 +116,6 @@ print(i)
   matchpred$obs[[i]] <- obs.m
 }
 lout[[M]] <- matchpred
-# saveRDS(matchpred, file = paste0("nlcd/model_pred/match_pred_", M, ".rds"))
 }
 
 saveRDS(lout, file = "outputs/matchsitecluster.rds")

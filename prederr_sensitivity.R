@@ -77,11 +77,11 @@ efin <- data.frame(Null = en, Site = es) %>%
         bind_cols(as.data.frame(escmat[,-1]))
 write.csv(efin, "outputs/error_bar_N_df.csv", row.names = FALSE)
 
-# dferr %>% 
-#         mutate(across(where(is.numeric), round, 3)) %>% 
-#         mutate(Metric = c("MAE", "RMSE","MAE%", "RMSE%", "SD")) %>% 
-#         relocate(Metric, Null) %>% 
-#         write.csv(., file = "figures/Table2.csv", row.names = FALSE)
+dferr %>%
+        mutate(across(where(is.numeric), round, 3)) %>%
+        mutate(Metric = c("MAE", "RMSE","MAE%", "RMSE%", "SD")) %>%
+        relocate(Metric, Null) %>%
+        write.csv(., file = "figures/Table2.csv", row.names = FALSE)
 
 # put tables together
 dat.out <- read.csv("figures/Table2b.csv")

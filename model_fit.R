@@ -15,12 +15,16 @@ kvec <- sapply(tpxlcov, function(x){ mean(x[['prefire']]) })
 
 N <- length(kvec)
 
-# === lmer models and predictions ####
+# === create a directory to store output
+dir.create("outputs/models/", showWarnings = FALSE)
+
+# === glm: wildfire level
 
 mlist <- list()
 mlist0 <- list()
 y <- list()
 yhat <- list()
+datlist <- list()
 for(i in 1:N){
   # estimate growth and K parameters
   dat <- glm.dat(tsage, tfires, tpxlcov, i, 2) # cluster number is a filler here as it is not used in the model
@@ -36,14 +40,18 @@ for(i in 1:N){
   
   y[[i]] = dat
   yhat[[i]] = exp(predict(temp))
+  
+  datlist[[i]] = dat
 }
 
 saveRDS(list(mlist = mlist,
              mlist0 = mlist0,
              y = y, yhat = yhat),
-        file = paste0("nlcd/models/modout_", 1,".rds"))
+        file = paste0("outputs/models/modout_", 1,".rds"))
 
-# === glmer (CAUTION: takes a long time)
+saveRDS(datlist, paste0("outputs/models/datlist_", 1, ".rds"))
+
+# === glmer: cluster-level models
 
 for(k in 2:15){
   
@@ -51,6 +59,7 @@ for(k in 2:15){
   mlist0 <- list()
   y <- list()
   yhat <- list()
+  datlist <- list()
   for(i in 1:N){
     
     # estimate growth and K parameters
@@ -72,7 +81,8 @@ for(k in 2:15){
   saveRDS(list(mlist = mlist,
                mlist0 = mlist0,
                y = y, yhat = yhat),
-          file = paste0("nlcd/models/modout_", k,".rds"))
+          file = paste0("outputs/models/modout_", k,".rds"))
+  saveRDS(datlist, paste0("outputs/models/datlist_", k, ".rds"))
 }
 
 
